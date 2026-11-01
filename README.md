@@ -6,10 +6,11 @@ Chicken Road now has the same integration foundation with an independent INOUT n
 
 ## Run locally
 
-Requires Node.js 22.13+ (tested with 22.17). No npm packages or build step are required. Node's built-in SQLite currently emits an experimental warning.
+Requires Node.js 22.x (22.13 or newer; tested with 22.17). Install dependencies with `npm ci`; the frontend has no build step. The backend uses `pg` for PostgreSQL and can use Node's built-in SQLite for local development.
 
 ```powershell
 Copy-Item .env.example .env
+npm ci
 npm start
 ```
 
@@ -28,7 +29,7 @@ Balances are persistent in `data/azmera.sqlite`. Money is stored as integer mino
 - Telegram Mini App HMAC authentication and expiring bearer sessions (stored hashed on the server).
 - Optional loopback-only developer login, disabled unless explicitly configured.
 - Private-chat bot commands `/start`, `/help`, `/wallet`, `/games`; secret-authenticated webhook and update deduplication.
-- SQLite double-entry ledger, atomic balance checks, request idempotency and conflicting-request rejection.
+- PostgreSQL/SQLite double-entry ledger, atomic balance checks, request idempotency and conflicting-request rejection.
 - Test deposit, stake, settlement, refund, withdrawal reservation and payout-result flows.
 - User ownership checks, pending-operation recovery, activity history, basic rate limits and restrictive browser policy.
 
@@ -89,11 +90,11 @@ The transaction simulator uses a fixed **test fixture** of 2× stake for a win. 
 
 ## Scope limits
 
-Not production ready. SQLite is a single-node prototype store; production migrations, operational controls, provider adapters, payment integrations, real account verification, administrative tools and reconciliation are outstanding. Credentials alone will not unlock live mode. Keep the sandbox database separate from any future real-money ledger; never convert test credits to withdrawable funds.
+Not production ready. Supabase PostgreSQL is supported; supplier adapters, production operational controls and bank reconciliation still require completion. SQLite remains an option for local development. Credentials alone will not unlock live mode. Keep the sandbox database separate from any future real-money ledger; never convert test credits to withdrawable funds.
 
 ### Account consent and lobby
 
-First-time visitors see the guest lobby. Loading Telegram launch data alone never registers or logs in a visitor. After explicit login, reload or reopening restores an existing login from a persistent HttpOnly cookie and validates it against the server. Register requires the account-creation checkbox; Log in requires a deliberate button press. Existing Telegram accounts created by earlier builds can use Log in without losing wallet history. Registration consent is recorded in SQLite. New sessions last up to 30 days and survive closing and reopening the browser or Mini App when its persistent cookies are retained. Cookies use HttpOnly and Secure/SameSite=None on HTTPS (SameSite=Lax for local HTTP tests). The database stores only token hashes. Logout revokes the session and expires the cookie, including when the session has already expired. Legacy tab-only credentials are removed; users need one explicit login after this upgrade. Clearing browser data or changing the app hostname requires logging in again. The retired `/api/auth/telegram` endpoint returns 410.
+First-time visitors see the guest lobby. Loading Telegram launch data alone never registers or logs in a visitor. After explicit login, reload or reopening restores an existing login from a persistent HttpOnly cookie and validates it against the server. Register requires the account-creation checkbox; Log in requires a deliberate button press. Existing Telegram accounts created by earlier builds can use Log in without losing wallet history. Registration consent is recorded in the configured database. New sessions last up to 30 days and survive closing and reopening the browser or Mini App when its persistent cookies are retained. Cookies use HttpOnly and Secure/SameSite=None on HTTPS (SameSite=Lax for local HTTP tests). The database stores only token hashes. Logout revokes the session and expires the cookie, including when the session has already expired. Legacy tab-only credentials are removed; users need one explicit login after this upgrade. Clearing browser data or changing the app hostname requires logging in again. The retired `/api/auth/telegram` endpoint returns 410.
 
 The responsive lobby follows the supplied recording: dark sidebar, green navigation, promo tiles, category filters, game search and modal account screens. Azmera artwork replaces reference branding. The catalog contains 30 titles, with case-insensitive multiword search, punctuation normalization, category filters, result counts and an empty state. Provider names are omitted from card captions. Official artwork is bundled where sourced; see public/assets/games/SOURCES.md. Remaining artwork uses clearly documented title placeholders. The 25 added catalog entries are unavailable for launch and betting until integrated. Live win feeds, rewards, sports and support contacts remain unavailable; placeholders do not claim live activity.
 
@@ -101,3 +102,7 @@ The responsive lobby follows the supplied recording: dark sidebar, green navigat
 ### Manual CBE and Telebirr payments
 
 See [manual payment operations](docs/MANUAL-PAYMENTS.md) for customer flow, reviewer access, agent assignment, daily receiving-account changes and remaining production work. Manual payment handling is separate from provider game mode. `APP_MODE=sandbox` continues to prevent live supplier gameplay; `MANUAL_PAYMENTS_ENABLED=true` enables actual manually reviewed payment requests on a separate cash ledger. Existing test credits cannot fund cash withdrawals or be converted to cash. The app does not contact CBE or Telebirr to verify or send money.
+
+## Supabase PostgreSQL deployment
+
+The backend supports Supabase PostgreSQL through `DATABASE_URL`. Set `DATABASE_DRIVER=postgres` to require it and prevent accidental fallback to local SQLite. Frontend configuration is unchanged; database credentials belong only on Render. See [the Supabase deployment guide](docs/SUPABASE-DEPLOYMENT.md) for a fresh database setup, connection checks and tests. Local SQLite remains available for development.

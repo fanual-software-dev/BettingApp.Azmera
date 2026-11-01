@@ -26,7 +26,20 @@ export function readConfig(env = process.env) {
   }
   const manualPaymentsEnabled = env.MANUAL_PAYMENTS_ENABLED === 'true';
   if (manualPaymentsEnabled && (!paymentAdmins.length || !paymentMethods.some(m => m.account))) throw new Error('Manual payments require a receiving account and at least one payment reviewer');
+  const databaseUrl = (env.DATABASE_URL || '').trim();
+  if (databaseUrl) {
+    try { if (!['postgres:', 'postgresql:'].includes(new URL(databaseUrl).protocol)) throw new Error(); }
+    catch { throw new Error('DATABASE_URL must be a PostgreSQL connection URL'); }
+  }
+  const databaseDriver = env.DATABASE_DRIVER || (databaseUrl ? 'postgres' : 'sqlite');
+  if (!['postgres', 'sqlite'].includes(databaseDriver)) throw new Error('DATABASE_DRIVER must be postgres or sqlite');
+  if (databaseDriver === 'postgres' && !databaseUrl) throw new Error('DATABASE_URL is required for PostgreSQL');
+  if (databaseDriver === 'sqlite' && databaseUrl) throw new Error('Remove DATABASE_URL to use SQLite');
+  const databasePoolSize = Number(env.DATABASE_POOL_SIZE || 5);
+  if (!Number.isInteger(databasePoolSize) || databasePoolSize < 1 || databasePoolSize > 20) throw new Error('DATABASE_POOL_SIZE must be between 1 and 20');
+  if (env.DATABASE_SSL && !['true', 'false'].includes(env.DATABASE_SSL)) throw new Error('DATABASE_SSL must be true or false');
   return {
+    databaseDriver, databaseUrl, databaseSsl: env.DATABASE_SSL !== 'false', databaseCa: env.DATABASE_CA_CERT || '', databasePoolSize,
     mode, host, port, localLogin, publicUrl: publicUrl.origin,
     databasePath: path.resolve(env.DATABASE_PATH || './data/azmera.sqlite'),
     payments: { enabled: manualPaymentsEnabled, admins: paymentAdmins.map(id => `tg:${id}`), methods: paymentMethods },

@@ -2,7 +2,7 @@
 
 ## Milestone 1 — runnable foundation (this delivery)
 
-Delivered: minimal Node HTTP backend, SQLite ledger, bot webhook, Telegram sign-in, mobile lobby, test transactions for all five game entries, automated correctness tests, setup guide and gap register. No third-party npm dependencies. Provider adapters are intentionally unimplemented.
+Delivered: minimal Node HTTP backend, PostgreSQL/SQLite ledger, bot webhook, Telegram sign-in, mobile lobby, test transactions for all five game entries, automated correctness tests, setup guide and gap register. The PostgreSQL backend uses the pg package. Provider adapters are intentionally unimplemented.
 
 ## Milestone 2 — first supplier end to end
 

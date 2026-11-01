@@ -35,7 +35,7 @@ The customer chooses CBE or Telebirr, an amount and a receiving account/phone nu
 
 ## Ledger, storage and limits
 
-Cash balances use `cash_available` and `cash_reserved` accounts; simulator balances remain `available` and `reserved`. Provider adapters still operate only in their sandbox, and cash is not currently connected to gameplay. The two ledgers do not share spendable balances. Manual clearing accounts are split by CBE and Telebirr. All transitions use the existing balanced, idempotent SQLite transactions. Payment requests, verified reference uniqueness, agent access, account snapshots, receipt images and append-only audit events persist in the configured SQLite database.
+Cash balances use `cash_available` and `cash_reserved` accounts; simulator balances remain `available` and `reserved`. Provider adapters still operate only in their sandbox, and cash is not currently connected to gameplay. The two ledgers do not share spendable balances. Manual clearing accounts are split by CBE and Telebirr. All transitions use the existing balanced, idempotent SQLite transactions. Payment requests, verified reference uniqueness, agent access, account snapshots, receipt images and append-only audit events persist in the configured PostgreSQL or local SQLite database.
 
 There is a maximum of five open requests per user and twenty new requests per rolling 24 hours. Each amount must be a positive integer minor-unit value, up to the existing 1,000,000 ETB transaction ceiling. The user interface accepts two decimal places. User history shows the latest 50 requests and reviewer queues show up to 100 pending/processing requests, oldest first.
 
