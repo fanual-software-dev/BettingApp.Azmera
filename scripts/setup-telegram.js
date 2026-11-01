@@ -29,6 +29,11 @@ try {
   if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing from .env');
   const bot = await telegram('getMe');
   console.log(`Bot: @${bot.username}`);
+  if (process.argv.includes('--description')) {
+    await telegram('setMyDescription', { description: 'Welcome to Azmera Bet! Explore our game catalog and manage your account in Telegram. Open Azmera to get started. 18+ only.' });
+    await telegram('setMyShortDescription', { short_description: 'Azmera Bet | Your gaming hub on Telegram. Explore the catalog and manage your account. 18+.' });
+    console.log('Bot description and About text updated.');
+  }
   if (process.argv.includes('--apply')) {
     const url = new URL(process.env.PUBLIC_APP_URL);
     if (url.protocol !== 'https:' || url.username || url.password) throw new Error('A public HTTPS app URL is required');

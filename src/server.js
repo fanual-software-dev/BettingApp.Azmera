@@ -135,11 +135,11 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
                 if (!['/start', '/help', '/wallet', '/games'].includes(command))
                     return json(200, { ok: true });
                 if (!config.publicUrl.startsWith('https://'))
-                    return json(200, { method: 'sendMessage', chat_id: message.chat.id, text: 'The sandbox Mini App needs its public HTTPS URL configured.' });
+                    return json(200, { method: 'sendMessage', chat_id: message.chat.id, text: 'Azmera Bet is temporarily unavailable. Please try again later.' });
                 return json(200, {
                     method: 'sendMessage', chat_id: message.chat.id,
-                    text: payments.settings.enabled ? 'Welcome to Azmera Bet. Open your wallet to request a CBE or Telebirr deposit or withdrawal. Payments are manually reviewed. Provider games are not connected yet.' : 'Welcome to Azmera Bet sandbox. Explore our game catalog and test wallet. All balances are test credits; no real deposits, games or payouts are connected.',
-                    reply_markup: { inline_keyboard: [[{ text: 'Open sandbox', web_app: { url: config.publicUrl } }]] },
+                    text: 'Welcome to Azmera Bet! Explore the game catalog and manage your account in Telegram. Tap Open Azmera to get started.',
+                    reply_markup: { inline_keyboard: [[{ text: 'Open Azmera', web_app: { url: config.publicUrl } }]] },
                 });
             }
             if (req.method === 'POST') {
