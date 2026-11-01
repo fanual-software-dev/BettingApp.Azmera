@@ -1,0 +1,16 @@
+{
+  "name": "azmera-bet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --env-file-if-exists=.env --watch src/server.js",
+    "test": "node --test",
+    "check:aviator": "node --env-file-if-exists=.env scripts/check-aviator.js",
+    "check:chicken-road": "node --env-file-if-exists=.env scripts/check-chicken-road.js",
+    "telegram:status": "node --env-file-if-exists=.env scripts/setup-telegram.js",
+    "telegram:setup": "node --env-file-if-exists=.env scripts/setup-telegram.js --apply"
+  }
+}
