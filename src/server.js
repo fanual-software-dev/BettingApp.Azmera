@@ -121,7 +121,11 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
                 const update = await body(req);
                 if (!Number.isSafeInteger(update.update_id))
                     fail('Invalid update');
-                const inserted = (await store.db.prepare('INSERT OR IGNORE INTO telegram_updates VALUES(?,?)').run(update.update_id, Date.now()));
+                const inserted = await store.db.transaction(async () => {
+                    const result = await store.db.prepare('INSERT OR IGNORE INTO telegram_updates VALUES(?,?)').run(update.update_id, Date.now());
+                    if (result.changes && update.message?.contact) await store.saveTelegramContact(update.message);
+                    return result;
+                });
                 if (!inserted.changes)
                     return json(200, { ok: true });
                 const message = update.message;
@@ -212,7 +216,7 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
             if (req.method === 'GET' && route === '/api/chicken-road/activity')
                 return json(200, { bets: await chickenRoad.activity(user.id) });
             if (req.method === 'GET' && route === '/api/me')
-                return json(200, { user, wallet: (await store.balance(user.id)), ...(await store.pending(user.id)), history: (await store.history(user.id)), cashWallet: (await payments.balance(user.id)), paymentRole: (await payments.role(user.id)) });
+                return json(200, { user: { ...user, phone: await store.phone(user.id) }, wallet: (await store.balance(user.id)), ...(await store.pending(user.id)), history: (await store.history(user.id)), cashWallet: (await payments.balance(user.id)), paymentRole: (await payments.role(user.id)) });
             if (req.method !== 'POST')
                 fail('Route not found', 404);
             if (route.startsWith('/api/admin/payments'))

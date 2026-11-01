@@ -1,5 +1,6 @@
 export const schemaStatements = [
   "CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS user_contacts(user_id TEXT PRIMARY KEY REFERENCES users(id), phone TEXT NOT NULL, shared_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS registration_consents(user_id TEXT PRIMARY KEY REFERENCES users(id), version TEXT NOT NULL, accepted_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS sessions(hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires INTEGER NOT NULL)",
   "CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id), kind TEXT NOT NULL, balance INTEGER NOT NULL DEFAULT 0)",

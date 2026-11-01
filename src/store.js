@@ -30,6 +30,23 @@ export class Store {
         }
     }
     async close() { (await this.db.close()); }
+    async phone(id) {
+        return (await this.db.prepare('SELECT phone FROM user_contacts WHERE user_id=?').get(id))?.phone || null;
+    }
+    async saveTelegramContact(message) {
+        const sender = message?.from?.id;
+        const contact = message?.contact;
+        if (message?.chat?.type !== 'private' || !Number.isSafeInteger(sender) || sender <= 0 ||
+            message.chat.id !== sender || contact?.user_id !== sender || message.from.is_bot || message.forward_origin)
+            return false;
+        const raw = String(contact.phone_number || '').trim();
+        if (!/^\+?[1-9][0-9]{6,14}$/.test(raw)) return false;
+        const id = `tg:${sender}`;
+        if (!await this.db.prepare('SELECT id FROM users WHERE id=?').get(id)) return false;
+        await this.db.prepare('INSERT INTO user_contacts(user_id,phone,shared_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET phone=excluded.phone,shared_at=excluded.shared_at')
+            .run(id, `+${raw.replace(/^\+/, '')}`, new Date().toISOString());
+        return true;
+    }
     async user(id, name) {
         (await this.db.prepare('INSERT INTO users(id,name) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name').run(id, name));
         for (const kind of ['available', 'reserved'])

@@ -32,12 +32,16 @@ try {
   if (process.argv.includes('--apply')) {
     const url = new URL(process.env.PUBLIC_APP_URL);
     if (url.protocol !== 'https:' || url.username || url.password) throw new Error('A public HTTPS app URL is required');
+    const webhook = new URL(process.env.TELEGRAM_WEBHOOK_URL || `${url.origin}/telegram/webhook`);
+    if (webhook.protocol !== 'https:' || webhook.username || webhook.password) throw new Error('A public HTTPS webhook URL is required');
+    const noSave = process.argv.includes('--no-save');
+    if (noSave && !process.env.TELEGRAM_WEBHOOK_SECRET) throw new Error('Set TELEGRAM_WEBHOOK_SECRET before configuring the deployed bot');
     const secret = process.env.TELEGRAM_WEBHOOK_SECRET || randomBytes(32).toString('hex');
     if (!/^[A-Za-z0-9_-]{1,256}$/.test(secret)) throw new Error('Invalid webhook secret format');
-    saveSettings({ TELEGRAM_BOT_USERNAME: bot.username, TELEGRAM_WEBHOOK_SECRET: secret, ALLOW_LOCAL_LOGIN: 'false' });
+    if (!noSave) saveSettings({ TELEGRAM_BOT_USERNAME: bot.username, TELEGRAM_WEBHOOK_SECRET: secret, ALLOW_LOCAL_LOGIN: 'false' });
     await telegram('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Open Azmera', web_app: { url: url.origin } } });
-    await telegram('setWebhook', { url: `${url.origin}/telegram/webhook`, secret_token: secret, allowed_updates: ['message'], drop_pending_updates: false });
-    console.log('Menu button and webhook configured. Restart the app to load local settings.');
+    await telegram('setWebhook', { url: webhook.href, secret_token: secret, allowed_updates: ['message'], drop_pending_updates: false });
+    console.log(noSave ? 'Menu button and webhook configured.' : 'Menu button and webhook configured. Restart the app to load local settings.');
   }
   const menu = await telegram('getChatMenuButton');
   const hook = await telegram('getWebhookInfo');

@@ -8,6 +8,7 @@ function showMessage(text, duration = 0) {
 }
 // The server remembers explicit login using a persistent HttpOnly cookie.
 let token = null;
+let userPhone = null;
 try { sessionStorage.removeItem('azmera-token'); } catch { /* Remove legacy tab-only credentials. */ }
 let authMode = 'login';
 let filter = 'all';
@@ -61,6 +62,9 @@ async function refresh() {
   $('header-balance').textContent = `${format(state.wallet.available)} ETB`;
   $('profile-open').textContent = state.user.name.slice(0, 1).toUpperCase();
   $('signed-in-name').textContent = state.user.name;
+  userPhone = state.user.phone;
+  $('account-phone').textContent = userPhone || 'Phone number not shared';
+  $('share-phone').hidden = !state.user.id.startsWith('tg:') || Boolean(userPhone);
   $('balance').textContent = format(state.wallet.available);
   $('reserved').textContent = `Reserved: ${format(state.wallet.reserved)} ETB`;
   for (const id of ['sandbox-wallet','sandbox-pending','sandbox-history']) $(id).hidden = !config.localLogin;
@@ -109,7 +113,35 @@ async function refresh() {
 async function login(route, data = {}) {
   await api(route, data); token = 'cookie-session';
   await refresh(); $('auth-dialog').close();
+  if (route !== '/api/auth/local' && !userPhone) $('phone-dialog').showModal();
 }
+function sharePhone(button) {
+  const tg = window.Telegram?.WebApp;
+  if (!tg?.initData || !tg.isVersionAtLeast?.('6.9')) {
+    showMessage('Open this app in an updated Telegram app to share your phone number.');
+    return;
+  }
+  button.disabled = true;
+  try {
+    tg.requestContact(async shared => {
+      try {
+        if (!shared) { showMessage('Phone number was not shared.', 2000); return; }
+        $('phone-dialog').close();
+        const session = token;
+        for (let attempt = 0; attempt < 10; attempt++) {
+          if (!session || token !== session) return;
+          await refresh();
+          if (userPhone) { showMessage('Telegram phone number saved.', 2000); return; }
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        showMessage('Your number has not arrived yet. Refresh your profile shortly.');
+      } catch (error) { showMessage(error.message); }
+      finally { button.disabled = false; }
+    });
+  } catch (error) { button.disabled = false; showMessage(error.message); }
+}
+$('share-phone').onclick = () => sharePhone($('share-phone'));
+$('confirm-share-phone').onclick = () => sharePhone($('confirm-share-phone'));
 $('login').onclick = () => action($('login'), () => login('/api/auth/local'));
 $('deposit').onclick = () => action($('deposit'), async () => { await api('/api/sandbox/deposits', { amount: amount('amount') }); await refresh(); showMessage('Test credits added. No real money was collected.', 2000); });
 $('withdraw').onclick = () => action($('withdraw'), async () => { await api('/api/sandbox/withdrawals', { amount: amount('amount') }); await refresh(); });
@@ -206,6 +238,9 @@ async function boot() {
 }
 function clearSession() {
   token = null;
+  userPhone = null;
+  $('account-phone').textContent = '';
+  $('phone-dialog').close();
   paymentUI.reset();
   try { sessionStorage.removeItem('azmera-token'); } catch { /* Already cleared in memory. */ }
   $('account').hidden = true;
