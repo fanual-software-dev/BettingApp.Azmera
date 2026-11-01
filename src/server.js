@@ -9,11 +9,13 @@ import { AviatorService } from './aviator.js';
 import { ChickenRoadService } from './chicken-road.js';
 import { TelegramClock } from './telegram-clock.js';
 import { Payments } from './payments.js';
+import { Broadcasts } from './broadcasts.js';
 const publicDirectory = new URL('../public/', import.meta.url);
 const staticFiles = new Map([
     ['/', ['index.html', 'text/html; charset=utf-8']],
     ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
     ['/payments.js', ['payments.js', 'text/javascript; charset=utf-8']],
+    ['/broadcasts.js', ['broadcasts.js', 'text/javascript; charset=utf-8']],
     ['/assets/payments/cbe.png', ['assets/payments/cbe.png', 'image/png']],
     ['/assets/payments/telebirr.png', ['assets/payments/telebirr.png', 'image/png']],
     ['/assets/brand/azmera-telegram.png', ['assets/brand/azmera-telegram.png', 'image/png']],
@@ -62,6 +64,8 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
     const aviator = new AviatorService(store, config, adapter);
     const chickenRoad = new ChickenRoadService(store, config, inoutAdapter);
     const payments = await Payments.open(store, config);
+    const broadcasts = new Broadcasts(store, config);
+    await broadcasts.initialize();
     const providerGames = new Map([['aviator', aviator], ['chicken-road', chickenRoad]]);
     const callbacks = new Map([['/integrations/spribe/wallet', aviator], ['/integrations/inout/wallet', chickenRoad]]);
     const rateLimits = new Map();
@@ -124,6 +128,7 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
                 const inserted = await store.db.transaction(async () => {
                     const result = await store.db.prepare('INSERT OR IGNORE INTO telegram_updates VALUES(?,?)').run(update.update_id, Date.now());
                     if (result.changes && update.message?.contact) await store.saveTelegramContact(update.message);
+                    if (result.changes) await broadcasts.track(update.message);
                     return result;
                 });
                 if (!inserted.changes)
@@ -132,13 +137,14 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
                 if (message?.chat?.type !== 'private' || !Number.isSafeInteger(message.chat.id))
                     return json(200, { ok: true });
                 const command = String(message.text || '').split(/\s/)[0].split('@')[0];
+                if (command === '/stop') return json(200, { method: 'sendMessage', chat_id: message.chat.id, text: 'Announcements stopped. Send /start to receive them again.' });
                 if (!['/start', '/help', '/wallet', '/games'].includes(command))
                     return json(200, { ok: true });
                 if (!config.publicUrl.startsWith('https://'))
                     return json(200, { method: 'sendMessage', chat_id: message.chat.id, text: 'Azmera Bet is temporarily unavailable. Please try again later.' });
                 return json(200, {
                     method: 'sendMessage', chat_id: message.chat.id,
-                    text: 'Welcome to Azmera Bet! Explore the game catalog and manage your account in Telegram. Tap Open Azmera to get started.',
+                    text: 'Welcome to Azmera Bet! Explore the game catalog and manage your account in Telegram. Tap Open Azmera to get started. Send /stop to stop announcements.',
                     reply_markup: { inline_keyboard: [[{ text: 'Open Azmera', web_app: { url: config.publicUrl } }]] },
                 });
             }
@@ -174,6 +180,7 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
                 }
                 const user = route === '/api/auth/register'
                     ? (await store.register(`tg:${identity.id}`, identity.name)) : (await store.existingUser(`tg:${identity.id}`));
+                await store.db.prepare('INSERT OR IGNORE INTO bot_subscribers VALUES(?,?,1,?)').run(user.id, user.name, Date.now());
                 const token = newToken();
                 (await store.session(user.id, token));
                 sessionCookie(token);
@@ -191,6 +198,15 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
             const user = (await store.authenticate(token));
             if (!config.localLogin && user.id === 'local-developer')
                 fail('Developer sign-in is disabled. Open the app through Telegram.', 401);
+            if (route.startsWith('/api/admin/broadcasts')) {
+                broadcasts.owner(user.id);
+                if (route === '/api/admin/broadcasts' && req.method === 'GET') return json(200, await broadcasts.list(user.id));
+                if (route === '/api/admin/broadcasts' && req.method === 'POST') return json(200, await broadcasts.draft(user.id, await body(req, 2900000), req.headers['idempotency-key']));
+                const match = /^\/api\/admin\/broadcasts\/([a-f0-9-]{36})(\/send)?$/.exec(route);
+                if (match && req.method === 'GET' && !match[2]) return json(200, await broadcasts.preview(user.id, match[1]));
+                if (match?.[2] && req.method === 'POST') return json(200, await broadcasts.confirm(user.id, match[1], (await body(req)).confirm));
+                fail('Route not found', 404);
+            }
             const paymentPath = /^\/api\/payments\/([a-f0-9-]{36})\/(proof|cancel|receipt)$/.exec(route);
             const reviewPath = /^\/api\/admin\/payments\/([a-f0-9-]{36})\/(review|audit)$/.exec(route);
             if (req.method === 'GET' && route === '/api/payments')
@@ -273,6 +289,15 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
         }
     });
     server.requestTimeout = 15000;
+    let workerTimer, workerTask = null;
+    server.on('listening', () => {
+        workerTimer = setInterval(() => {
+            if (!workerTask) workerTask = broadcasts.tick().catch(() => console.error('Broadcast worker failed; queued deliveries remain stored.')).finally(() => { workerTask = null; });
+        }, 1200);
+        workerTimer.unref();
+    });
+    server.stopBroadcasts = async () => { clearInterval(workerTimer); await workerTask; };
+    server.on('close', () => clearInterval(workerTimer));
     server.headersTimeout = 10000;
     return server;
 }
@@ -296,7 +321,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     clockTimer?.unref();
     const server = (await createApp(config, store, undefined, undefined, clock));
     server.listen(config.port, config.host, () => console.log(`Azmera sandbox: ${config.publicUrl} (local sign-in ${config.localLogin ? 'enabled' : 'disabled'})`));
-    const shutdown = () => { clearInterval(clockTimer); server.close(async () => { (await store.close()); process.exit(0); }); };
+    const shutdown = () => { clearInterval(clockTimer); server.close(async () => { await server.stopBroadcasts(); (await store.close()); process.exit(0); }); };
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
 }

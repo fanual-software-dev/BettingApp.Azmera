@@ -1,4 +1,8 @@
 export const schemaStatements = [
+  "CREATE TABLE IF NOT EXISTS bot_subscribers(id TEXT PRIMARY KEY, name TEXT NOT NULL, active INTEGER NOT NULL, updated INTEGER NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS broadcasts(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, request_key TEXT NOT NULL UNIQUE, content TEXT NOT NULL, photo BLOB, photo_type TEXT, status TEXT NOT NULL, created INTEGER NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS broadcast_deliveries(broadcast_id TEXT NOT NULL REFERENCES broadcasts(id), subscriber_id TEXT NOT NULL REFERENCES bot_subscribers(id), status TEXT NOT NULL, updated INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(broadcast_id,subscriber_id))",
+  "CREATE TABLE IF NOT EXISTS broadcast_clock(id TEXT PRIMARY KEY, next_at INTEGER NOT NULL)",
   "CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS user_contacts(user_id TEXT PRIMARY KEY REFERENCES users(id), phone TEXT NOT NULL, shared_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS registration_consents(user_id TEXT PRIMARY KEY REFERENCES users(id), version TEXT NOT NULL, accepted_at TEXT NOT NULL)",
