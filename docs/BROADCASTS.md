@@ -4,7 +4,7 @@ Deploy the backend to Render and frontend to Vercel. No new environment variable
 
 Open Profile/Wallet → Announcements. Enter plain text (including Amharic), optionally choose a PNG/JPEG up to 2 MB, and select Preview announcement. The server saves an immutable draft and snapshots its recipients. Review the image, text and recipient count, then press Confirm and send. Creating or previewing a draft sends nothing. Delivery history refreshes every five seconds while the dialog is open. Saved drafts can be reopened. A new announcement creates a new draft; repeated confirmation cannot requeue an existing campaign.
 
-Text limits: 4096 UTF-16 code units without an image, 1024 with an image. Images are sent as Telegram photos, not stickers. Telegram may reject unsupported image dimensions/content; such deliveries appear as failed. HTML/Markdown is not interpreted.
+Text limits: 4096 UTF-16 code units without an image, 1024 with an image. The uploader accepts PNG/JPEG files up to 20 MB and 40 megapixels. Images over 2 MB or 1600 pixels on either side are resized and encoded as JPEG below 2 MB before upload; transparent areas in converted images use an emerald background. Review the processed image in the preview. The backend retains its 2 MB limit. Images are sent as Telegram photos, not stickers. Telegram may reject unsupported image dimensions/content; such deliveries appear as failed. HTML/Markdown is not interpreted.
 
 ## Audience
 
