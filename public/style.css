@@ -43,6 +43,18 @@
 .broadcast-copy{white-space:pre-wrap;overflow-wrap:anywhere}
 #broadcast-text{width:100%;box-sizing:border-box;padding:12px;border:1px solid #46603c;border-radius:10px;background:#142019;color:inherit;font:inherit;resize:vertical}
 #broadcast-error{color:#ff8a80}
+#dashboard-dialog{width:min(820px,94vw)}
+.dashboard-periods{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.dashboard-periods button{font-size:12px;padding:9px 6px;background:#23392a;color:#c9ded1}
+.dashboard-periods button[aria-pressed=true]{background:#36dd95;color:#092818}
+.dashboard-cards{display:grid;gap:14px;margin-top:16px}.dashboard-card{padding:16px;border:1px solid #34503d;border-radius:12px;background:#15291d}
+.dashboard-card small,.dashboard-card strong{display:block}.dashboard-card strong{font-size:28px;margin-top:6px}.dashboard-card small{font-size:12px}
+.dashboard-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.dashboard-payment-group h3{font-size:15px}
+.dashboard-card.status-completed{color:#51df94}.dashboard-card.status-pending{color:#ffad44}.dashboard-card.status-canceled{color:#ff7373}
+.dashboard-user{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #2c4233;padding:15px 0;font-size:13px}.dashboard-user>div{min-width:0;overflow-wrap:anywhere}.dashboard-user small{display:block;color:#a3bcae;margin-top:5px;font-size:11px}.dashboard-wager{text-align:right;flex-shrink:0;max-width:45%}
+.dashboard-pagination{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:15px;font-size:11px}.dashboard-pagination button{font-size:11px;padding:8px}
+#dashboard-note,#dashboard-range{font-size:11px;color:#a3bcae}#dashboard-error{color:#ff8a80}
+@media(max-width:400px){.dashboard-card{padding:10px}.dashboard-card small{font-size:10px}.dashboard-card strong{font-size:24px}}
 #account-dialog .account-profile h2{flex:1;font-size:18px}
 #account-dialog #broadcast-open{margin-left:auto;flex:0 0 auto;font-size:11px;padding:8px 10px;border-radius:8px;white-space:nowrap}
 .broadcast-upload{margin:16px 0 10px}

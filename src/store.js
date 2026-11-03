@@ -63,6 +63,7 @@ export class Store {
                 fail('An account already exists. Please log in.', 409);
             const user = (await this.user(id, name));
             (await this.db.prepare('INSERT INTO registration_consents VALUES(?,?,?)').run(id, 'telegram-registration-v1', new Date().toISOString()));
+            if (id.startsWith('tg:')) await this.db.prepare('INSERT OR IGNORE INTO audience_join_dates VALUES(?,?)').run(id, new Date().toISOString());
             return user;
         }));
     }

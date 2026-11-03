@@ -8,6 +8,8 @@ export class Broadcasts {
     this.send = send || (job => this.telegram(job));
   }
   async initialize() {
+    await this.db.prepare("INSERT OR IGNORE INTO audience_join_dates(user_id,joined_at) SELECT u.id,c.accepted_at FROM users u LEFT JOIN registration_consents c ON c.user_id=u.id WHERE u.id LIKE 'tg:%'").run();
+    await this.db.prepare("INSERT OR IGNORE INTO audience_join_dates(user_id,joined_at) SELECT id,NULL FROM bot_subscribers WHERE id LIKE 'tg:%'").run();
     await this.db.prepare("INSERT OR IGNORE INTO bot_subscribers(id,name,active,updated) SELECT id,name,1,0 FROM users WHERE id LIKE 'tg:%'").run();
     await this.db.prepare("INSERT OR IGNORE INTO broadcast_clock VALUES('global',0)").run();
   }
@@ -20,6 +22,7 @@ export class Broadcasts {
     const command = String(message.text || '').split(/\s/)[0].split('@')[0];
     const userId = `tg:${id}`;
     const name = String(message.from.first_name || 'Telegram user').slice(0, 120);
+    await this.db.prepare('INSERT OR IGNORE INTO audience_join_dates VALUES(?,?)').run(userId, new Date().toISOString());
     await this.db.prepare('INSERT OR IGNORE INTO bot_subscribers VALUES(?,?,1,?)').run(userId, name, Date.now());
     if (['/start', '/stop'].includes(command))
       await this.db.prepare('UPDATE bot_subscribers SET active=?,name=?,updated=? WHERE id=?').run(command === '/start' ? 1 : 0, name, Date.now(), userId);

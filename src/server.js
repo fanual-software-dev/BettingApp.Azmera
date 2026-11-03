@@ -10,12 +10,14 @@ import { ChickenRoadService } from './chicken-road.js';
 import { TelegramClock } from './telegram-clock.js';
 import { Payments } from './payments.js';
 import { Broadcasts } from './broadcasts.js';
+import { Dashboard } from './dashboard.js';
 const publicDirectory = new URL('../public/', import.meta.url);
 const staticFiles = new Map([
     ['/', ['index.html', 'text/html; charset=utf-8']],
     ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
     ['/payments.js', ['payments.js', 'text/javascript; charset=utf-8']],
     ['/broadcasts.js', ['broadcasts.js', 'text/javascript; charset=utf-8']],
+    ['/dashboard.js', ['dashboard.js', 'text/javascript; charset=utf-8']],
     ['/assets/payments/cbe.png', ['assets/payments/cbe.png', 'image/png']],
     ['/assets/payments/telebirr.png', ['assets/payments/telebirr.png', 'image/png']],
     ['/assets/brand/azmera-telegram.png', ['assets/brand/azmera-telegram.png', 'image/png']],
@@ -65,6 +67,7 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
     const chickenRoad = new ChickenRoadService(store, config, inoutAdapter);
     const payments = await Payments.open(store, config);
     const broadcasts = new Broadcasts(store, config);
+    const dashboard = new Dashboard(store, config);
     await broadcasts.initialize();
     const providerGames = new Map([['aviator', aviator], ['chicken-road', chickenRoad]]);
     const callbacks = new Map([['/integrations/spribe/wallet', aviator], ['/integrations/inout/wallet', chickenRoad]]);
@@ -207,6 +210,8 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
                 if (match?.[2] && req.method === 'POST') return json(200, await broadcasts.confirm(user.id, match[1], (await body(req)).confirm));
                 fail('Route not found', 404);
             }
+            if (route === '/api/admin/dashboard' && req.method === 'GET')
+                return json(200, await dashboard.read(user.id, { query: url.searchParams.get('q') || '', page: Number(url.searchParams.get('page') || 1) }));
             const paymentPath = /^\/api\/payments\/([a-f0-9-]{36})\/(proof|cancel|receipt)$/.exec(route);
             const reviewPath = /^\/api\/admin\/payments\/([a-f0-9-]{36})\/(review|audit)$/.exec(route);
             if (req.method === 'GET' && route === '/api/payments')

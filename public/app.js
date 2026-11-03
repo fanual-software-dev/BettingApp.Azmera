@@ -9,6 +9,7 @@ function showMessage(text, duration = 0) {
 // The server remembers explicit login using a persistent HttpOnly cookie.
 let token = null;
 const broadcastUI = setupBroadcasts({ $, api, node });
+const dashboardUI = setupDashboard({ $, api, node, format: value => format(value) });
 let userPhone = null;
 try { sessionStorage.removeItem('azmera-token'); } catch { /* Remove legacy tab-only credentials. */ }
 let authMode = 'login';
@@ -64,6 +65,7 @@ async function refresh() {
   $('profile-open').textContent = state.user.name.slice(0, 1).toUpperCase();
   $('signed-in-name').textContent = state.user.name;
   $('broadcast-open').hidden = state.paymentRole !== 'owner';
+  $('dashboard-open').hidden = state.paymentRole !== 'owner';
   userPhone = state.user.phone;
   $('account-phone').textContent = userPhone || 'Phone number not shared';
   $('share-phone').hidden = !state.user.id.startsWith('tg:') || Boolean(userPhone);
@@ -241,6 +243,7 @@ async function boot() {
 function clearSession() {
   token = null;
   broadcastUI.reset();
+  dashboardUI.reset();
   userPhone = null;
   $('account-phone').textContent = '';
   $('phone-dialog').close();
