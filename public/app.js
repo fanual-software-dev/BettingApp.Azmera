@@ -66,12 +66,15 @@ async function refresh() {
   $('signed-in-name').textContent = state.user.name;
   $('broadcast-open').hidden = state.paymentRole !== 'owner';
   $('dashboard-open').hidden = state.paymentRole !== 'owner';
+  const staff = ['owner', 'agent'].includes(state.paymentRole);
+  document.querySelector('.user-actions').classList.toggle('staff-actions', staff);
+  for (const id of ['wallet-open','header-deposit','header-balance','customer-wallet','customer-tracking']) $(id).hidden = staff;
   userPhone = state.user.phone;
   $('account-phone').textContent = userPhone || 'Phone number not shared';
   $('share-phone').hidden = !state.user.id.startsWith('tg:') || Boolean(userPhone);
   $('balance').textContent = format(state.wallet.available);
   $('reserved').textContent = `Reserved: ${format(state.wallet.reserved)} ETB`;
-  for (const id of ['sandbox-wallet','sandbox-pending','sandbox-history']) $(id).hidden = !config.localLogin;
+  for (const id of ['sandbox-wallet','sandbox-pending','sandbox-history']) $(id).hidden = staff || !config.localLogin;
   await paymentUI.refresh();
   $('pending').replaceChildren();
   for (const round of state.rounds) {

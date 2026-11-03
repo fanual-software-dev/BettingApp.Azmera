@@ -30,7 +30,7 @@ export class Dashboard {
     const periods = dashboardPeriods(now);
     for (const range of Object.values(periods)) {
       const end = new Date(Math.min(new Date(range.end).getTime(), now.getTime() + 1)).toISOString();
-      range.joined = (await this.db.prepare(`${audience} SELECT COUNT(*) AS n FROM people WHERE joined_at>=? AND joined_at<?`).get(range.start,end)).n;
+      range.joined = (await this.db.prepare(`${audience} SELECT COUNT(*) AS n FROM people WHERE joined_at IS NULL OR (joined_at>=? AND joined_at<?)`).get(range.start,end)).n;
       range.deposits = { total: 0, completed: 0, pending: 0, canceled: 0 };
       range.withdrawals = { total: 0, completed: 0, pending: 0, canceled: 0 };
       const rows = await this.db.prepare('SELECT kind,status,COUNT(*) AS n FROM payment_requests WHERE created_at>=? AND created_at<? GROUP BY kind,status').all(range.start,end);
@@ -50,7 +50,7 @@ export class Dashboard {
       UNION ALL SELECT user_id,stake FROM chicken_road_bets WHERE status<>'refunded'
     ), wager_totals AS (SELECT user_id,SUM(stake) AS total FROM wagers GROUP BY user_id)
     SELECT people.*,COALESCE(w.total,0) AS total_wager FROM people LEFT JOIN wager_totals w ON w.user_id=people.id
-    ${filter} ORDER BY LOWER(name),id LIMIT 50 OFFSET ?`).all(term,term,term,(page-1)*50);
-    return { periods, totals, users, matched, page, pageSize: 50, timezone: 'Africa/Addis_Ababa', currency: 'ETB', wagerMode: 'sandbox', generatedAt: now.toISOString() };
+    ${filter} ORDER BY LOWER(name),id LIMIT 10 OFFSET ?`).all(term,term,term,(page-1)*10);
+    return { periods, totals, users, matched, page, pageSize: 10, timezone: 'Africa/Addis_Ababa', currency: 'ETB', wagerMode: 'sandbox', generatedAt: now.toISOString() };
   }
 }

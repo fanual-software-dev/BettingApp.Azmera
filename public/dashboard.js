@@ -8,8 +8,11 @@ function setupDashboard({ $, api, node, format }) {
     $('dashboard-range').textContent = `${date(data.start)} – ${date(new Date(data.end).getTime()-1)} · Ethiopian time`;
     for (const button of document.querySelectorAll('[data-dashboard-period]')) button.setAttribute('aria-pressed', String(button.dataset.dashboardPeriod === period));
     const cards = $('dashboard-cards'); cards.replaceChildren();
-    const joined = node('section', '', 'dashboard-card dashboard-joined');
-    joined.append(node('small', 'New users'), node('strong', data.joined)); cards.append(joined);
+    const joinedCards = $('dashboard-joined-cards'); joinedCards.replaceChildren();
+    for (const [key,label] of [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['yearly','Yearly']]) {
+      const joined = node('section', '', 'dashboard-card dashboard-joined');
+      joined.append(node('small',label),node('strong',state.periods[key].joined)); joinedCards.append(joined);
+    }
     for (const [key,label] of [['deposits','Deposit requests'],['withdrawals','Withdrawal requests']]) {
       const group = node('section', '', 'dashboard-payment-group');
       group.append(node('h3', `${label} · ${data[key].total}`));
@@ -20,7 +23,6 @@ function setupDashboard({ $, api, node, format }) {
       }
       group.append(grid); cards.append(group);
     }
-    $('dashboard-note').textContent = `Counts use the request creation date and current status. Pending includes drafts/processing; canceled includes rejected/failed. Weeks start Monday. ${state.totals.unknown} older users have no recorded join date and are excluded from new-user counts.`;
     const list = $('dashboard-users'); list.replaceChildren();
     for (const user of state.users) {
       const card = node('article', '', 'dashboard-user');
@@ -29,9 +31,9 @@ function setupDashboard({ $, api, node, format }) {
       card.append(identity,wager); list.append(card);
     }
     if (!state.users.length) list.append(node('p','No users found.'));
-    $('dashboard-page').textContent = `Page ${page} of ${Math.max(1,Math.ceil(state.matched/50))} · ${state.matched} users`;
+    $('dashboard-page').textContent = `Page ${page} of ${Math.max(1,Math.ceil(state.matched/state.pageSize))} · ${state.matched} users`;
     $('dashboard-prev').disabled = page === 1;
-    $('dashboard-next').disabled = page*50 >= state.matched;
+    $('dashboard-next').disabled = page*state.pageSize >= state.matched;
   }
   async function load() {
     const current = ++sequence;
@@ -48,6 +50,6 @@ function setupDashboard({ $, api, node, format }) {
   for (const button of document.querySelectorAll('[data-dashboard-period]')) button.onclick = () => { period = button.dataset.dashboardPeriod; render(); };
   $('dashboard-search').oninput = () => { clearTimeout(timer); sequence++; page = 1; timer = setTimeout(load, 250); };
   $('dashboard-prev').onclick = () => { if (page>1) { page--; load(); } };
-  $('dashboard-next').onclick = () => { if (state && page*50<state.matched) { page++; load(); } };
-  return { reset() { sequence++; clearTimeout(timer); state = null; page = 1; period = 'daily'; $('dashboard-dialog').close(); $('dashboard-open').hidden = true; $('dashboard-search').value = ''; for (const id of ['dashboard-cards','dashboard-users','dashboard-totals','dashboard-note','dashboard-range','dashboard-page','dashboard-error']) $(id).replaceChildren(); } };
+  $('dashboard-next').onclick = () => { if (state && page*state.pageSize<state.matched) { page++; load(); } };
+  return { reset() { sequence++; clearTimeout(timer); state = null; page = 1; period = 'daily'; $('dashboard-dialog').close(); $('dashboard-open').hidden = true; $('dashboard-search').value = ''; for (const id of ['dashboard-cards','dashboard-users','dashboard-totals','dashboard-joined-cards','dashboard-range','dashboard-page','dashboard-error']) $(id).replaceChildren(); } };
 }
