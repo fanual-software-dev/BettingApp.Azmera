@@ -13,6 +13,7 @@ import { Broadcasts } from './broadcasts.js';
 import { Dashboard } from './dashboard.js';
 import { Crash } from './crash.js';
 import { Feedback } from './feedback.js';
+import { PaymentAlerts } from './payment-alerts.js';
 const publicDirectory = new URL('../public/', import.meta.url);
 const staticFiles = new Map([
     ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -21,6 +22,9 @@ const staticFiles = new Map([
     ['/broadcasts.js', ['broadcasts.js', 'text/javascript; charset=utf-8']],
     ['/dashboard.js', ['dashboard.js', 'text/javascript; charset=utf-8']],
     ['/crash.js', ['crash.js', 'text/javascript; charset=utf-8']],
+    ['/crash-audio.js', ['crash-audio.js', 'text/javascript; charset=utf-8']],
+    ['/assets/audio/azmera-countdown-reference.mp3', ['assets/audio/azmera-countdown-reference.mp3', 'audio/mpeg']],
+    ['/assets/audio/azmera-flight-reference.mp3', ['assets/audio/azmera-flight-reference.mp3', 'audio/mpeg']],
     ['/assets/payments/cbe.png', ['assets/payments/cbe.png', 'image/png']],
     ['/assets/payments/telebirr.png', ['assets/payments/telebirr.png', 'image/png']],
     ['/assets/brand/azmera-telegram.png', ['assets/brand/azmera-telegram.png', 'image/png']],
@@ -34,6 +38,7 @@ const staticFiles = new Map([
 ]);
 // Only explicitly catalogued local artwork is served; never accept a filesystem path from a request.
 for (const game of games) {
+    if(game.playArtwork)staticFiles.set(game.playArtwork,[game.playArtwork.slice(1),'image/png']);
     if (!game.artwork)
         continue;
     const extension = game.artwork.split('.').pop();
@@ -72,6 +77,7 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
     const broadcasts = new Broadcasts(store, config);
     const dashboard = new Dashboard(store, config);
     const feedback = new Feedback(store, config.smtp);
+    const paymentAlerts = new PaymentAlerts(store,config);
     const demoCrash = new Crash(store);
     const cashCrash = new Crash(store,()=>Date.now(),'cash');
     await cashCrash.initialize();
@@ -363,8 +369,10 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
         }
     });
     server.requestTimeout = 15000;
-    let workerTimer, workerTask = null, crashTimer, crashTask = null;
+    let workerTimer, workerTask = null, crashTimer, crashTask = null, alertTimer, alertTask=null;
     server.on('listening', () => {
+        alertTimer=setInterval(()=>{if(!alertTask)alertTask=paymentAlerts.tick().catch(()=>console.error('Payment email alert delayed; queued event remains stored.')).finally(()=>{alertTask=null;});},2000);
+        alertTimer.unref();
         workerTimer = setInterval(() => {
             if (!workerTask) workerTask = broadcasts.tick().catch(() => console.error('Broadcast worker failed; queued deliveries remain stored.')).finally(() => { workerTask = null; });
         }, 1200);
@@ -379,9 +387,9 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
         },500);
         crashTimer.unref();
     });
-    server.stopBroadcasts = async () => { clearInterval(workerTimer); clearInterval(crashTimer); await Promise.all([workerTask,crashTask]); };
+    server.stopBroadcasts = async () => { clearInterval(workerTimer); clearInterval(crashTimer);clearInterval(alertTimer); await Promise.all([workerTask,crashTask,alertTask]); };
     server.closeEventStreams = () => { for(const s of streams.values())s.stop(); };
-    server.on('close', () => {clearInterval(workerTimer);clearInterval(crashTimer);});
+    server.on('close', () => {clearInterval(workerTimer);clearInterval(crashTimer);clearInterval(alertTimer);});
     server.headersTimeout = 10000;
     return server;
 }

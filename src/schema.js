@@ -40,5 +40,8 @@ export const schemaStatements = [
   "CREATE TABLE IF NOT EXISTS payout_allowances(request_id TEXT PRIMARY KEY REFERENCES payment_requests(id), user_id TEXT NOT NULL, amount INTEGER NOT NULL, day TEXT NOT NULL, status TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS feedback_messages(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),request_key TEXT NOT NULL,subject TEXT NOT NULL,message TEXT NOT NULL,email TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,sent_at TEXT NOT NULL,UNIQUE(user_id,request_key))",
   "CREATE INDEX IF NOT EXISTS feedback_user_time ON feedback_messages(user_id,created_at)"
-  ,"CREATE INDEX IF NOT EXISTS crash_paid_payout ON crash_bets(status,payout)"
+  ,"CREATE INDEX IF NOT EXISTS crash_paid_payout ON crash_bets(status,payout)",
+  "CREATE TABLE IF NOT EXISTS payment_alerts(request_id TEXT PRIMARY KEY REFERENCES payment_requests(id),payload TEXT NOT NULL,status TEXT NOT NULL,attempts INTEGER NOT NULL,retry_at INTEGER NOT NULL,lease_until INTEGER NOT NULL)",
+  "CREATE INDEX IF NOT EXISTS payment_alert_queue ON payment_alerts(status,retry_at)",
+  "CREATE TABLE IF NOT EXISTS deposit_bonuses(request_id TEXT PRIMARY KEY REFERENCES payment_requests(id),amount INTEGER NOT NULL,rate_bps INTEGER NOT NULL,mode TEXT NOT NULL,status TEXT NOT NULL,credited_at INTEGER NOT NULL DEFAULT 0)"
 ];

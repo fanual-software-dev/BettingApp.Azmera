@@ -10,7 +10,7 @@ function showMessage(text, duration = 0) {
 let token = null;
 const broadcastUI = setupBroadcasts({ $, api, node });
 const dashboardUI = setupDashboard({ $, api, node, format: value => format(value) });
-const crashUI = setupCrash({ $, api, node, format: value => format(value), signedIn: () => Boolean(token), login: () => openAuth('login') });
+const crashUI = setupCrash({ $, api, node, format: value => format(value), signedIn: () => Boolean(token), login: () => openAuth('login'), artwork: id => { const game=config.games.find(game=>game.id===id); return game.playArtwork||game.artwork; } });
 let userPhone = null;
 try { sessionStorage.removeItem('azmera-token'); } catch { /* Remove legacy tab-only credentials. */ }
 let authMode = 'login';

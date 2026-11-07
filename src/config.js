@@ -39,6 +39,8 @@ export function readConfig(env = process.env) {
   if (!Number.isInteger(databasePoolSize) || databasePoolSize < 1 || databasePoolSize > 20) throw new Error('DATABASE_POOL_SIZE must be between 1 and 20');
   if (env.DATABASE_SSL && !['true', 'false'].includes(env.DATABASE_SSL)) throw new Error('DATABASE_SSL must be true or false');
   const crashMode = env.CRASH_MODE || 'demo';
+  const depositBonusMode=env.DEPOSIT_BONUS_MODE||'off';
+  if(!['off','after-six-rounds'].includes(depositBonusMode))throw new Error('DEPOSIT_BONUS_MODE must be off or after-six-rounds');
   const smtpPort=Number(env.SMTP_PORT||587);
   if(!Number.isInteger(smtpPort)||smtpPort<1||smtpPort>65535)throw new Error('Invalid SMTP_PORT');
   if(env.SMTP_FROM && !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(env.SMTP_FROM))throw new Error('SMTP_FROM must be a single email address');
@@ -54,11 +56,12 @@ export function readConfig(env = process.env) {
     if(missing.length)throw new Error(`Cash games require these configuration fixes: ${missing.join('; ')}. Secret values are omitted.`);
   }
   return {
+    paymentEmailAlerts: env.PAYMENT_EMAIL_ALERTS_ENABLED !== 'false',
     smtp: {host:env.SMTP_HOST||'',port:smtpPort,user:env.SMTP_USER||'',pass:env.SMTP_PASS||'',from:env.SMTP_FROM||''},
     databaseDriver, databaseUrl, databaseSsl: env.DATABASE_SSL !== 'false', databaseCa: env.DATABASE_CA_CERT || '', databasePoolSize,
     mode, crashMode, host, port, localLogin, publicUrl: publicUrl.origin,
     databasePath: path.resolve(env.DATABASE_PATH || './data/azmera.sqlite'),
-    payments: { enabled: manualPaymentsEnabled, admins: paymentAdmins.map(id => `tg:${id}`), methods: paymentMethods },
+    payments: { enabled: manualPaymentsEnabled, admins: paymentAdmins.map(id => `tg:${id}`), methods: paymentMethods, depositBonusMode },
     botToken: env.TELEGRAM_BOT_TOKEN || '', webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
     botUsername: /^[A-Za-z0-9_]{5,32}$/.test(env.TELEGRAM_BOT_USERNAME || '') ? env.TELEGRAM_BOT_USERNAME : '',
     spribe: {

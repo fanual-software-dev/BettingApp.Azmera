@@ -46,12 +46,13 @@ function setupPayments({ $, api, amount, format, node, refreshAccount, showMessa
     if(currentDeposit?.id!==request.id){selectProof('transaction');receiptData=null;$('deposit-proof-form').reset();$('receipt-preview').removeAttribute('src');$('receipt-preview').hidden=true;}
     currentDeposit=request;showStep('deposit-details','Payment details');const box=$('deposit-details-content');box.replaceChildren();
     detail(box,'Amount',`${format(request.amount)} ETB`);detail(box,'Payment method',methodName(request.method));detail(box,'Account-holder name',request.receiver_holder);detail(box,'Receiving account',request.receiver_account);const logo=node('img');logo.src=`/assets/payments/${request.method}.png`;logo.alt=methodName(request.method);logo.className='payment-detail-logo';box.children[1].append(logo);
+    if(request.bonus){detail(box,`${request.bonus.rate_bps/100}% deposit bonus`,`${format(request.bonus.amount)} ETB after approval`);detail(box,'Total playable balance added',`${format(request.amount+request.bonus.amount)} ETB`);box.append(node('p','Bonus is playable after approval. Its amount stays held from withdrawals until you complete 6 cash rounds started after approval. Each round counts once; canceled and refunded rounds do not count.'));}
     $('payment-dialog').showModal();
   }
   async function refresh() {
     const sequence=++refreshSequence;
     const data=await api('/api/payments');if(!isSignedIn()||sequence!==refreshSequence)return;state=data;
-    $('cash-balance').textContent=format(data.wallet.available);$('cash-reserved').textContent=`Reserved: ${format(data.wallet.reserved)} ETB`;
+    $('cash-balance').textContent=format(data.wallet.available);$('cash-reserved').textContent=`Reserved: ${format(data.wallet.reserved)} ETB${data.wallet.bonusLocked?` · Bonus held: ${format(data.wallet.bonusLocked)} ETB · Withdrawable: ${format(data.wallet.withdrawable)} ETB`:''}`;
     if(getConfig().manualPayments)$('header-balance').textContent=`${format(data.wallet.available)} ETB`;
     $('payments-availability').hidden=data.enabled;
     $('payments-availability').textContent=data.enabled?'':'Deposits and withdrawals are being configured. Do not send money yet.';
@@ -89,6 +90,7 @@ function setupPayments({ $, api, amount, format, node, refreshAccount, showMessa
         card.append(node('p',explanations[request.status]||'','tracking-description'));
       }
       card.append(node('small',`Request: ${request.id}`,'payment-request-id'));
+      if(request.bonus)card.append(node('p',`${request.bonus.rate_bps/100}% bonus: ${format(request.bonus.amount)} ETB · ${request.bonus.status==='credited'?(request.bonus.unlocked?'Unlocked':`${request.bonus.roundsCompleted}/6 rounds completed`):request.bonus.status}`));
       if(request.updated_at&&request.updated_at!==request.created_at)card.append(node('small',`Updated ${new Date(request.updated_at).toLocaleString()}`));
       if(request.reference)card.append(node('small',`Transaction: ${request.reference}`));
       if(request.reason)card.append(node('p',request.reason));
@@ -105,7 +107,7 @@ function setupPayments({ $, api, amount, format, node, refreshAccount, showMessa
     const method=[...document.querySelectorAll('[name="deposit-method"]')].find(i=>!i.disabled);if(method)method.checked=true;
     showStep('deposit-create-form','Deposit money');$('payment-dialog').showModal();
   };
-  $('cash-withdraw').onclick=()=>{if(!state?.enabled)return;showStep('withdrawal-form','Withdraw money');$('withdrawal-available').textContent=`Available: ${format(state.wallet.available)} ETB`;$('payment-dialog').showModal();};
+  $('cash-withdraw').onclick=()=>{if(!state?.enabled)return;showStep('withdrawal-form','Withdraw money');$('withdrawal-available').textContent=`Withdrawable: ${format(state.wallet.withdrawable??state.wallet.available)} ETB`;$('payment-dialog').showModal();};
   for(const b of document.querySelectorAll('[data-deposit-amount]'))b.onclick=()=>{$('deposit-amount').value=b.dataset.depositAmount;};
   $('deposit-create-form').onsubmit=event=>{event.preventDefault();run(event.submitter,'payment-error',async()=>{
     const method=document.querySelector('[name="deposit-method"]:checked')?.value;const request=await mutate('/api/payments/deposits',{method,amount:amount('deposit-amount')});renderDeposit(request);await refreshAccount();

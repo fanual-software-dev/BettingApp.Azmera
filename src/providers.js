@@ -1,6 +1,6 @@
 export const games = Object.freeze([
-  { id: 'azmera-flight', name: 'Azmera Flight', provider: 'Azmera', category: 'Crash', artwork: '/assets/games/azmera-flight.svg', status: 'original', engine: 'crash', liveAvailable: false },
-  { id: 'azmera-jet', name: 'Azmera Jet', provider: 'Azmera', category: 'Crash', artwork: '/assets/games/azmera-jet.svg', status: 'original', engine: 'crash', liveAvailable: false },
+  { id: 'azmera-flight', name: 'Azmera Flight', provider: 'Azmera', category: 'Crash', artwork: '/assets/games/azmera-flight-poster.svg', playArtwork: '/assets/games/azmera-flight-plane.png', status: 'original', engine: 'crash', liveAvailable: false },
+  { id: 'azmera-jet', name: 'Azmera Jet', provider: 'Azmera', category: 'Crash', artwork: '/assets/games/azmera-jet-poster.svg', playArtwork: '/assets/games/azmera-jet-plane.png', status: 'original', engine: 'crash', liveAvailable: false },
   {
     "id": "aviator",
     "name": "Aviator",

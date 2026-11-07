@@ -1,6 +1,8 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { fail, money } from './store.js';
 import { paymentLimits, ethiopianDay } from './game-rules.js';
+import { queuePaymentAlert } from './payment-alerts.js';
+import { depositBonus } from './deposit-bonus.js';
 const now = () => new Date().toISOString();
 const summaryColumns = 'id,user_id,kind,method,amount,status,receiver_id,receiver_account,receiver_holder,agent_id,destination,holder,reference,reviewer_id,reason,created_at,updated_at,receipt IS NOT NULL AS "hasReceipt"';
 function text(value, label, max = 120) {
@@ -96,7 +98,20 @@ export class Payments {
     async balance(id) {
         const rows = (await this.db.prepare("SELECT kind,balance FROM accounts WHERE user_id=? AND kind IN ('cash_available','cash_reserved')").all(id));
         const values = Object.fromEntries(rows.map(r => [r.kind, r.balance]));
-        return { currency: 'ETB', available: values.cash_available || 0, reserved: values.cash_reserved || 0 };
+        const available=values.cash_available||0;
+        const locked=await this.lockedBonus(id);
+        return { currency: 'ETB', available, reserved: values.cash_reserved || 0,bonusLocked:Math.min(available,locked),withdrawable:Math.max(0,available-locked) };
+    }
+    async bonusDetails(id) {
+        const bonus=await this.db.prepare('SELECT b.*,p.user_id FROM deposit_bonuses b JOIN payment_requests p ON p.id=b.request_id WHERE b.request_id=?').get(id);
+        if(!bonus)return null;
+        let completed=0;
+        if(bonus.status==='credited')completed=(await this.db.prepare("SELECT COUNT(DISTINCT r.id) AS n FROM crash_rounds r JOIN crash_bets b ON b.round_id=r.id WHERE b.user_id=? AND b.status IN ('paid','lost') AND r.status='finished' AND r.game IN ('azmera-flight:cash','azmera-jet:cash') AND r.opens>=?").get(bonus.user_id,bonus.credited_at)).n;
+        return {amount:bonus.amount,rate_bps:bonus.rate_bps,mode:bonus.mode,status:bonus.status,roundsCompleted:Math.min(6,completed),roundsRequired:6,unlocked:bonus.status==='credited'&&completed>=6};
+    }
+    async lockedBonus(user) {
+        const bonuses=await this.db.prepare("SELECT b.request_id FROM deposit_bonuses b JOIN payment_requests p ON p.id=b.request_id WHERE p.user_id=? AND b.status='credited'").all(user);
+        let total=0;for(const row of bonuses){const bonus=await this.bonusDetails(row.request_id);if(!bonus.unlocked)total+=bonus.amount;}return total;
     }
     async methods() {
         const active = await this.db.prepare('SELECT method FROM receiving_accounts WHERE active=1').all();
@@ -106,7 +121,7 @@ export class Payments {
         const row = (await this.db.prepare('SELECT * FROM payment_requests WHERE id=?').get(id));
         if (!row)
             fail('Payment request not found', 404);
-        return row;
+        return {...row,bonus:await this.bonusDetails(id)};
     }
     view(row) { const { receipt, receipt_type, receipt_hash, ...rest } = row; return { ...rest, hasReceipt: Boolean(receipt || row.hasReceipt) }; }
     async own(id, user) {
@@ -123,7 +138,10 @@ export class Payments {
         if ((await this.db.prepare('SELECT COUNT(*) AS n FROM payment_requests WHERE user_id=? AND created_at>?').get(id, new Date(Date.now() - 86400000).toISOString())).n >= 20)
             fail('Daily request limit reached', 429);
     }
-    async list(id) { return (await this.db.prepare(`SELECT ${summaryColumns} FROM payment_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 50`).all(id)).map(r => this.view(r)); }
+    async list(id) {
+        const rows=await this.db.prepare(`SELECT ${summaryColumns} FROM payment_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 50`).all(id);
+        return Promise.all(rows.map(async r=>this.view({...r,bonus:await this.bonusDetails(r.id)})));
+    }
     async createDeposit(user, data, key) {
         this.ensureEnabled();
         const method = this.method(data.method), amount = money(data.amount);
@@ -136,6 +154,10 @@ export class Payments {
             const id = randomUUID();
             (await this.db.prepare(`INSERT INTO payment_requests(id,user_id,kind,method,amount,status,receiver_id,receiver_account,receiver_holder,agent_id,created_at,updated_at) VALUES(?,?,'deposit',?,?,'draft',?,?,?,?,?,?)`).run(id, user, method, amount, receiver.id, receiver.account, receiver.holder, receiver.agent_id, now(), now()));
             (await this.audit(id, user, 'deposit_created'));
+            if(this.settings.depositBonusMode==='after-six-rounds' && !(await this.role(user))) {
+                const bonus=depositBonus(amount);
+                await this.db.prepare("INSERT INTO deposit_bonuses(request_id,amount,rate_bps,mode,status) VALUES(?,?,?,'after-six-rounds','pending')").run(id,bonus.amount,bonus.rateBps);
+            }
             return this.view((await this.row(id)));
         }));
     }
@@ -151,6 +173,7 @@ export class Payments {
                 fail('You already submitted this transaction ID', 409);
             (await this.db.prepare("UPDATE payment_requests SET reference=?,receipt=?,receipt_type=?,receipt_hash=?,holder=?,status='pending',updated_at=? WHERE id=?").run(ref, image?.bytes || null, image?.type || null, image?.hash || null, holder, now(), id));
             (await this.audit(id, user, 'proof_submitted', { reference: ref, receiptHash: image?.hash || null }));
+            await queuePaymentAlert(this.db,await this.row(id));
             return this.view((await this.row(id)));
         }));
     }
@@ -164,10 +187,13 @@ export class Payments {
             if (used + amount > paymentLimits.dailyWithdrawal) fail('Daily withdrawal limit is 50,000 ETB (Ethiopian time)', 409);
             (await this.cap(user));
             (await this.ensureAccounts(user));
+            const wallet=await this.balance(user);
+            if(wallet.bonusLocked&&amount>wallet.withdrawable)fail('This amount includes a locked bonus. Complete six cash rounds after the deposit to unlock it.',409);
             (await this.store.transfer(op, `${user}:cash_available`, `${user}:cash_reserved`, amount));
             const id = randomUUID();
             (await this.db.prepare(`INSERT INTO payment_requests(id,user_id,kind,method,amount,status,destination,holder,created_at,updated_at) VALUES(?,?,'withdrawal',?,?,'pending',?,?,?,?)`).run(id, user, method, amount, account, holder, now(), now()));
             (await this.audit(id, user, 'withdrawal_requested'));
+            await queuePaymentAlert(this.db,await this.row(id));
             return this.view((await this.row(id)));
         }));
     }
@@ -180,6 +206,7 @@ export class Payments {
                 (await this.store.transfer(op, `${user}:cash_reserved`, `${user}:cash_available`, row.amount));
             (await this.db.prepare("UPDATE payment_requests SET status='cancelled',updated_at=? WHERE id=?").run(now(), id));
             (await this.audit(id, user, 'cancelled'));
+            await this.db.prepare("UPDATE deposit_bonuses SET status='cancelled' WHERE request_id=? AND status='pending'").run(id);
             return this.view((await this.row(id)));
         }));
     }
@@ -211,8 +238,14 @@ export class Payments {
                     (await this.reserveReference(row, 'incoming', ref));
                 (await this.ensureAccounts(row.user_id));
                 (await this.store.transfer(op, `cash:clearing:${row.method}`, `${row.user_id}:cash_available`, row.amount));
+                if(row.bonus?.status==='pending') {
+                    const capital=await this.db.prepare("SELECT balance FROM accounts WHERE id='cash:crash_available'").get();
+                    if(!capital||capital.balance<row.bonus.amount)fail('Insufficient house capital for this deposit bonus. Fund the bankroll before approval.',409);
+                    await this.store.transfer(op,'cash:crash_available',`${row.user_id}:cash_available`,row.bonus.amount);
+                    await this.db.prepare("UPDATE deposit_bonuses SET status='credited',credited_at=? WHERE request_id=?").run(Date.now(),row.id);
+                }
                 status = 'approved';
-                details = { reference: ref || null, recipient, sender, amount: row.amount, receiptHash: row.receipt_hash || null, confirmation: 'Reviewer approved receipt of funds' };
+                details = { reference: ref || null, recipient, sender, amount: row.amount, bonus:row.bonus?.amount||0, receiptHash: row.receipt_hash || null, confirmation: 'Reviewer approved receipt of funds' };
             }
             else if (action === 'claim' && row.kind === 'withdrawal' && row.status === 'pending') {
                 await this.reservePayout(row);
@@ -251,6 +284,7 @@ export class Payments {
                 fail('This action is not valid for the current request status', 409);
             (await this.db.prepare('UPDATE payment_requests SET status=?,reviewer_id=?,reason=?,reference=COALESCE(?,reference),updated_at=? WHERE id=?').run(status, actor, details.reason || null, details.reference || null, now(), id));
             (await this.audit(id, actor, action, details));
+            if(status==='rejected')await this.db.prepare("UPDATE deposit_bonuses SET status='cancelled' WHERE request_id=? AND status='pending'").run(id);
             return this.view((await this.row(id)));
         }));
     }

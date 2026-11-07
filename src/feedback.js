@@ -1,11 +1,11 @@
-import nodemailer from 'nodemailer';
+import { smtpTransport } from './email.js';
 import { randomUUID } from 'node:crypto';
 import { fail } from './store.js';
 
 export class Feedback {
   constructor(store, settings, transport) {
     this.db=store.db;this.settings=settings;
-    this.transport=transport || (settings?.host&&settings.user&&settings.pass&&settings.from ? nodemailer.createTransport({host:settings.host,port:settings.port,secure:settings.port===465,requireTLS:true,auth:{user:settings.user,pass:settings.pass},connectionTimeout:10000,greetingTimeout:10000,socketTimeout:20000,disableFileAccess:true,disableUrlAccess:true}) : null);
+    this.transport=transport || smtpTransport(settings);
   }
   async send(user,data,key) {
     if(!this.transport)fail('Feedback email is not configured yet. Please try again later.',503);
