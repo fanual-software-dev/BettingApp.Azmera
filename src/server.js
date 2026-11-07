@@ -11,6 +11,8 @@ import { TelegramClock } from './telegram-clock.js';
 import { Payments } from './payments.js';
 import { Broadcasts } from './broadcasts.js';
 import { Dashboard } from './dashboard.js';
+import { Crash } from './crash.js';
+import { Feedback } from './feedback.js';
 const publicDirectory = new URL('../public/', import.meta.url);
 const staticFiles = new Map([
     ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -18,6 +20,7 @@ const staticFiles = new Map([
     ['/payments.js', ['payments.js', 'text/javascript; charset=utf-8']],
     ['/broadcasts.js', ['broadcasts.js', 'text/javascript; charset=utf-8']],
     ['/dashboard.js', ['dashboard.js', 'text/javascript; charset=utf-8']],
+    ['/crash.js', ['crash.js', 'text/javascript; charset=utf-8']],
     ['/assets/payments/cbe.png', ['assets/payments/cbe.png', 'image/png']],
     ['/assets/payments/telebirr.png', ['assets/payments/telebirr.png', 'image/png']],
     ['/assets/brand/azmera-telegram.png', ['assets/brand/azmera-telegram.png', 'image/png']],
@@ -68,6 +71,13 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
     const payments = await Payments.open(store, config);
     const broadcasts = new Broadcasts(store, config);
     const dashboard = new Dashboard(store, config);
+    const feedback = new Feedback(store, config.smtp);
+    const demoCrash = new Crash(store);
+    const cashCrash = new Crash(store,()=>Date.now(),'cash');
+    await cashCrash.initialize();
+    const crash = config.crashMode==='cash'?cashCrash:demoCrash;
+    const streams = new Map();
+    const gameBadges = JSON.parse(await readFile(new URL('../config/game-badges.json', import.meta.url), 'utf8'));
     await broadcasts.initialize();
     const providerGames = new Map([['aviator', aviator], ['chicken-road', chickenRoad]]);
     const callbacks = new Map([['/integrations/spribe/wallet', aviator], ['/integrations/inout/wallet', chickenRoad]]);
@@ -95,23 +105,30 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
             }
             if (req.method === 'GET' && route === '/health') {
                 (await store.db.prepare('SELECT 1').get());
-                return json(200, { ok: true, mode: 'sandbox', liveReady: false, manualPayments: payments.settings.enabled, database: store.db.kind });
+                return json(200, { ok: true, mode: 'sandbox', crashMode: config.crashMode || 'demo', liveReady: false, manualPayments: payments.settings.enabled, database: store.db.kind });
             }
             if (req.method === 'GET' && route === '/api/config')
-                return json(200, { mode: 'sandbox', manualPayments: payments.settings.enabled, localLogin: config.localLogin, telegramConfigured: Boolean(config.botToken), botUrl: config.botUsername ? `https://t.me/${config.botUsername}` : null, games, providers: providerStatus() });
+                return json(200, { mode: 'sandbox', crashMode: config.crashMode || 'demo', gameBadges, manualPayments: payments.settings.enabled, localLogin: config.localLogin, telegramConfigured: Boolean(config.botToken), botUrl: config.botUsername ? `https://t.me/${config.botUsername}` : null, games, providers: providerStatus() });
             const ip = req.socket.remoteAddress;
             const now = Date.now();
             if (rateLimits.size > 10000)
                 for (const [key, val] of rateLimits)
                     if (val.until < now)
                         rateLimits.delete(key);
-            const bucket = rateLimits.get(ip);
+            const bucketKey = /^\/api\/crash\/(azmera-flight|azmera-jet)\/state$/.test(route) ? `crash-poll:${ip}` : ip;
+            const bucket = rateLimits.get(bucketKey);
             if (bucket && bucket.until > now) {
-                if (++bucket.count > 120)
+                if (++bucket.count > 120 && !/^\/api\/crash\/(azmera-flight|azmera-jet)\/state$/.test(route))
                     fail('Too many requests; try again shortly', 429);
             }
             else
-                rateLimits.set(ip, { until: now + 60000, count: 1 });
+                rateLimits.set(bucketKey, { until: now + 60000, count: 1 });
+            const watch = /^\/api\/watch\/(azmera-flight|azmera-jet)$/.exec(route);
+            if(route==='/api/recent-wins'&&req.method==='GET')return json(200,{wins:await cashCrash.recentWins(),minimumPayout:100000});
+            if (watch && req.method === 'GET') {
+                const snapshot = await crash.state(null, watch[1]);
+                return json(200, snapshot);
+            }
             if (callbacks.has(route) && req.method === 'POST') {
                 const service = callbacks.get(route);
                 service.ensureReady();
@@ -201,6 +218,11 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
             const user = (await store.authenticate(token));
             if (!config.localLogin && user.id === 'local-developer')
                 fail('Developer sign-in is disabled. Open the app through Telegram.', 401);
+            if(route==='/api/feedback'&&req.method==='POST')return json(200,await feedback.send(user,await body(req),req.headers['idempotency-key']));
+            if(route==='/api/admin/game-rules'&&req.method==='GET') {
+                await payments.requireOwner(user.id);
+                return json(200,{mode:config.crashMode||'demo',text:await readFile(new URL('../docs/ORIGINAL-CRASH-GAMES.md',import.meta.url),'utf8')});
+            }
             if (route.startsWith('/api/admin/broadcasts')) {
                 broadcasts.owner(user.id);
                 if (route === '/api/admin/broadcasts' && req.method === 'GET') return json(200, await broadcasts.list(user.id));
@@ -212,6 +234,53 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
             }
             if (route === '/api/admin/dashboard' && req.method === 'GET')
                 return json(200, await dashboard.read(user.id, { query: url.searchParams.get('q') || '', page: Number(url.searchParams.get('page') || 1) }));
+            if(route === '/api/admin/crash') {
+                await payments.requireOwner(user.id);
+                if(req.method==='GET')return json(200,{...await cashCrash.bankroll(),mode:config.crashMode||'demo',wallet:await payments.balance(user.id)});
+                if(req.method==='POST') {
+                    const data=await body(req), key=req.headers['idempotency-key'];
+                    if(data.action==='fund'&&data.confirm===true)return json(200,await cashCrash.fund(user.id,data.amount,key));
+                    if(data.action==='pause')return json(200,await cashCrash.pause(user.id,data.paused,key));
+                    fail('Confirm the bankroll transfer or select pause/resume');
+                }
+            }
+            const crashPath = /^\/api\/crash\/(azmera-flight|azmera-jet)\/(state|events|bet|cashout|cancel|credits)$/.exec(route);
+            if (crashPath) {
+                const [, game, action] = crashPath;
+                if(action==='events'&&req.method==='GET') {
+                    if(streams.size>=100)fail('Game connection capacity reached',503);
+                    if([...streams.values()].filter(s=>s.user===user.id).length>=2)fail('Close another game connection first',429);
+                    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});
+                    let timer,busy=false,closed=false;
+                    const stop=()=>{if(closed)return;closed=true;clearInterval(timer);streams.delete(res);res.end();};
+                    streams.set(res,{user:user.id,stop});res.on('close',stop);
+                    const push=async()=>{
+                        if(busy||closed)return;busy=true;
+                        try {
+                            await store.authenticate(token);
+                            const snapshot=await crash.state(user.id,game);
+                            if(!closed&&!res.write(`id: ${snapshot.round.id}:${snapshot.now}\nevent: state\ndata: ${JSON.stringify(snapshot)}\n\n`))stop();
+                        } catch {stop();} finally {busy=false;}
+                    };
+                    timer=setInterval(push,1000);timer.unref();await push();return;
+                }
+                if (action === 'state' && req.method === 'GET') {
+                    const rateKey=`crash-state:${user.id}`;
+                    const prior=rateLimits.get(rateKey);
+                    if(prior && prior.until>Date.now()) {if(++prior.count>90)fail('Too many game updates',429);}
+                    else rateLimits.set(rateKey,{count:1,until:Date.now()+60000});
+                    return json(200, await crash.state(user.id,game));
+                }
+                if (req.method !== 'POST') fail('Route not found',404);
+                const data = await body(req);
+                if (action === 'bet') return json(200,await crash.place(user.id,game,data,req.headers['idempotency-key']));
+                if (['cashout','cancel'].includes(action)) return json(200,await crash.act(user.id,game,data.betId,action));
+                if (action === 'credits') {
+                    if(config.crashMode==='cash')fail('Demo credits are disabled in cash mode',403);
+                    return json(200,await store.deposit(user.id,100000,`crash-demo-${new Date().toISOString().slice(0,10)}`));
+                }
+                fail('Route not found',404);
+            }
             const paymentPath = /^\/api\/payments\/([a-f0-9-]{36})\/(proof|cancel|receipt)$/.exec(route);
             const reviewPath = /^\/api\/admin\/payments\/([a-f0-9-]{36})\/(review|audit)$/.exec(route);
             if (req.method === 'GET' && route === '/api/payments')
@@ -294,15 +363,25 @@ export async function createApp(config, store, adapter, inoutAdapter, authClock 
         }
     });
     server.requestTimeout = 15000;
-    let workerTimer, workerTask = null;
+    let workerTimer, workerTask = null, crashTimer, crashTask = null;
     server.on('listening', () => {
         workerTimer = setInterval(() => {
             if (!workerTask) workerTask = broadcasts.tick().catch(() => console.error('Broadcast worker failed; queued deliveries remain stored.')).finally(() => { workerTask = null; });
         }, 1200);
         workerTimer.unref();
+        crashTimer = setInterval(() => {
+            if (!crashTask) crashTask = (async()=>{
+                for (const row of await store.db.prepare("SELECT game FROM crash_rounds WHERE status='active'").all()) {
+                    const cash=row.game.endsWith(':cash');
+                    await (cash?cashCrash:demoCrash).advance(cash?row.game.slice(0,-5):row.game);
+                }
+            })().catch(()=>console.error('Crash demo settlement delayed; persisted bets will recover.')).finally(()=>{crashTask=null;});
+        },500);
+        crashTimer.unref();
     });
-    server.stopBroadcasts = async () => { clearInterval(workerTimer); await workerTask; };
-    server.on('close', () => clearInterval(workerTimer));
+    server.stopBroadcasts = async () => { clearInterval(workerTimer); clearInterval(crashTimer); await Promise.all([workerTask,crashTask]); };
+    server.closeEventStreams = () => { for(const s of streams.values())s.stop(); };
+    server.on('close', () => {clearInterval(workerTimer);clearInterval(crashTimer);});
     server.headersTimeout = 10000;
     return server;
 }
@@ -326,7 +405,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     clockTimer?.unref();
     const server = (await createApp(config, store, undefined, undefined, clock));
     server.listen(config.port, config.host, () => console.log(`Azmera sandbox: ${config.publicUrl} (local sign-in ${config.localLogin ? 'enabled' : 'disabled'})`));
-    const shutdown = () => { clearInterval(clockTimer); server.close(async () => { await server.stopBroadcasts(); (await store.close()); process.exit(0); }); };
+    const shutdown = () => { clearInterval(clockTimer); server.closeEventStreams(); server.close(async () => { await server.stopBroadcasts(); (await store.close()); process.exit(0); }); };
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
 }

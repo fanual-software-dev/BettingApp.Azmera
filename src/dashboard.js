@@ -45,11 +45,12 @@ export class Dashboard {
     const filter = "WHERE LOWER(name) LIKE ? ESCAPE '!' OR COALESCE(phone,'') LIKE ? ESCAPE '!' OR id LIKE ? ESCAPE '!'";
     const matched = (await this.db.prepare(`${audience} SELECT COUNT(*) AS n FROM people ${filter}`).get(term,term,term)).n;
     const users = await this.db.prepare(`${audience}, wagers AS (
-      SELECT user_id,stake FROM rounds WHERE status<>'refund'
-      UNION ALL SELECT user_id,stake FROM aviator_bets WHERE status<>'refunded'
-      UNION ALL SELECT user_id,stake FROM chicken_road_bets WHERE status<>'refunded'
-    ), wager_totals AS (SELECT user_id,SUM(stake) AS total FROM wagers GROUP BY user_id)
-    SELECT people.*,COALESCE(w.total,0) AS total_wager FROM people LEFT JOIN wager_totals w ON w.user_id=people.id
+      SELECT user_id,stake,0 AS cash FROM rounds WHERE status<>'refund'
+      UNION ALL SELECT user_id,stake,0 FROM aviator_bets WHERE status<>'refunded'
+      UNION ALL SELECT user_id,stake,0 FROM chicken_road_bets WHERE status<>'refunded'
+      UNION ALL SELECT b.user_id,b.stake,CASE WHEN r.game LIKE '%:cash' THEN 1 ELSE 0 END FROM crash_bets b JOIN crash_rounds r ON r.id=b.round_id WHERE b.status<>'cancelled'
+    ), wager_totals AS (SELECT user_id,SUM(CASE WHEN cash=0 THEN stake ELSE 0 END) AS total,SUM(CASE WHEN cash=1 THEN stake ELSE 0 END) AS cash_total FROM wagers GROUP BY user_id)
+    SELECT people.*,COALESCE(w.total,0) AS total_wager,COALESCE(w.cash_total,0) AS cash_wager FROM people LEFT JOIN wager_totals w ON w.user_id=people.id
     ${filter} ORDER BY LOWER(name),id LIMIT 10 OFFSET ?`).all(term,term,term,(page-1)*10);
     return { periods, totals, users, matched, page, pageSize: 10, timezone: 'Africa/Addis_Ababa', currency: 'ETB', wagerMode: 'sandbox', generatedAt: now.toISOString() };
   }

@@ -1,11 +1,15 @@
 export const schemaStatements = [
+  "CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS crash_rounds(id TEXT PRIMARY KEY, game TEXT NOT NULL, seed TEXT NOT NULL, commitment TEXT NOT NULL, crash INTEGER NOT NULL, opens INTEGER NOT NULL, starts INTEGER NOT NULL, ends INTEGER NOT NULL, status TEXT NOT NULL)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS crash_active_game ON crash_rounds(game) WHERE status='active'",
+  "CREATE TABLE IF NOT EXISTS crash_bets(id TEXT PRIMARY KEY, round_id TEXT NOT NULL REFERENCES crash_rounds(id), user_id TEXT NOT NULL REFERENCES users(id), slot INTEGER NOT NULL, stake INTEGER NOT NULL, auto_at INTEGER NOT NULL, status TEXT NOT NULL, payout INTEGER NOT NULL DEFAULT 0, multiplier INTEGER NOT NULL DEFAULT 0)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS crash_slot ON crash_bets(round_id,user_id,slot) WHERE status<>'cancelled'",
   "CREATE TABLE IF NOT EXISTS audience_join_dates(user_id TEXT PRIMARY KEY, joined_at TEXT)",
   "CREATE INDEX IF NOT EXISTS audience_join_date ON audience_join_dates(joined_at)",
   "CREATE TABLE IF NOT EXISTS bot_subscribers(id TEXT PRIMARY KEY, name TEXT NOT NULL, active INTEGER NOT NULL, updated INTEGER NOT NULL)",
   "CREATE TABLE IF NOT EXISTS broadcasts(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, request_key TEXT NOT NULL UNIQUE, content TEXT NOT NULL, photo BLOB, photo_type TEXT, status TEXT NOT NULL, created INTEGER NOT NULL)",
   "CREATE TABLE IF NOT EXISTS broadcast_deliveries(broadcast_id TEXT NOT NULL REFERENCES broadcasts(id), subscriber_id TEXT NOT NULL REFERENCES bot_subscribers(id), status TEXT NOT NULL, updated INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(broadcast_id,subscriber_id))",
   "CREATE TABLE IF NOT EXISTS broadcast_clock(id TEXT PRIMARY KEY, next_at INTEGER NOT NULL)",
-  "CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS user_contacts(user_id TEXT PRIMARY KEY REFERENCES users(id), phone TEXT NOT NULL, shared_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS registration_consents(user_id TEXT PRIMARY KEY REFERENCES users(id), version TEXT NOT NULL, accepted_at TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS sessions(hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires INTEGER NOT NULL)",
@@ -29,5 +33,12 @@ export const schemaStatements = [
   "CREATE TABLE IF NOT EXISTS chicken_road_players(user_id TEXT PRIMARY KEY REFERENCES users(id), external_id TEXT NOT NULL UNIQUE)",
   "CREATE TABLE IF NOT EXISTS chicken_road_sessions(id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), token_hash TEXT NOT NULL UNIQUE, expires INTEGER NOT NULL, state TEXT NOT NULL, request_key TEXT NOT NULL, UNIQUE(user_id,request_key))",
   "CREATE TABLE IF NOT EXISTS chicken_road_bets(sequence INTEGER PRIMARY KEY,bet_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(id), round_id TEXT NOT NULL, stake INTEGER NOT NULL, status TEXT NOT NULL, payout INTEGER NOT NULL DEFAULT 0)",
-  "CREATE INDEX IF NOT EXISTS chicken_road_bets_user ON chicken_road_bets(user_id)"
+  "CREATE INDEX IF NOT EXISTS chicken_road_bets_user ON chicken_road_bets(user_id)",
+  "CREATE TABLE IF NOT EXISTS crash_reserves(bet_id TEXT PRIMARY KEY REFERENCES crash_bets(id), amount INTEGER NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS crash_heartbeat(round_id TEXT PRIMARY KEY REFERENCES crash_rounds(id), touched INTEGER NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS crash_controls(id TEXT PRIMARY KEY, paused INTEGER NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS payout_allowances(request_id TEXT PRIMARY KEY REFERENCES payment_requests(id), user_id TEXT NOT NULL, amount INTEGER NOT NULL, day TEXT NOT NULL, status TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS feedback_messages(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),request_key TEXT NOT NULL,subject TEXT NOT NULL,message TEXT NOT NULL,email TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,sent_at TEXT NOT NULL,UNIQUE(user_id,request_key))",
+  "CREATE INDEX IF NOT EXISTS feedback_user_time ON feedback_messages(user_id,created_at)"
+  ,"CREATE INDEX IF NOT EXISTS crash_paid_payout ON crash_bets(status,payout)"
 ];

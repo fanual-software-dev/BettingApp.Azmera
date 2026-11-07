@@ -17,6 +17,7 @@
     "db:check": "node --env-file-if-exists=.env scripts/check-database.js"
   },
   "dependencies": {
+    "nodemailer": "^10.3.1",
     "pg": "^8.23.1"
   }
 }

@@ -1,5 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { fail, money } from './store.js';
+import { paymentLimits, ethiopianDay } from './game-rules.js';
 const now = () => new Date().toISOString();
 const summaryColumns = 'id,user_id,kind,method,amount,status,receiver_id,receiver_account,receiver_holder,agent_id,destination,holder,reference,reviewer_id,reason,created_at,updated_at,receipt IS NOT NULL AS "hasReceipt"';
 function text(value, label, max = 120) {
@@ -55,6 +56,9 @@ export class Payments {
         return service;
     }
     async initialize() {
+        // Preserve older in-progress payouts as reservations; do not silently free their capacity.
+        await this.db.prepare("INSERT OR IGNORE INTO payout_allowances(request_id,user_id,amount,day,status) SELECT id,user_id,amount,updated_at,'reserved' FROM payment_requests WHERE kind='withdrawal' AND status='processing'").run();
+        await this.db.prepare("INSERT OR IGNORE INTO payout_allowances(request_id,user_id,amount,day,status) SELECT id,user_id,amount,updated_at,'paid' FROM payment_requests WHERE kind='withdrawal' AND status='paid'").run();
         for (const method of this.settings.methods) {
             if (method.account && method.holder && !(await this.db.prepare('SELECT id FROM receiving_accounts WHERE method=? LIMIT 1').get(method.id))) {
                 (await this.db.prepare('INSERT INTO receiving_accounts VALUES(?,?,?,?,?,1,?,?)').run(randomUUID(), method.id, destination(method.id, method.account), method.holder, null, 'configuration', now()));
@@ -123,6 +127,7 @@ export class Payments {
     async createDeposit(user, data, key) {
         this.ensureEnabled();
         const method = this.method(data.method), amount = money(data.amount);
+        if (amount < paymentLimits.minDeposit) fail('Minimum deposit is 100 ETB');
         return (await this.store.atomic(`payments:${user}`, key, { action: 'deposit', method, amount }, async () => {
             (await this.cap(user));
             const receiver = (await this.db.prepare('SELECT * FROM receiving_accounts WHERE method=? AND active=1').get(method));
@@ -151,8 +156,12 @@ export class Payments {
     }
     async createWithdrawal(user, data, key) {
         this.ensureEnabled();
+        if (data.amount > paymentLimits.maxWithdrawal) fail('Maximum withdrawal is 10,000 ETB per request');
         const method = this.method(data.method), amount = money(data.amount), account = destination(method, data.account), holder = data.holder === undefined || data.holder === '' ? null : text(data.holder, 'Account-holder name');
         return (await this.store.atomic(`payments:${user}`, key, { action: 'withdrawal', method, amount, account, holder }, async (op) => {
+            const [start,end] = ethiopianDay();
+            const used = (await this.db.prepare("SELECT COALESCE(SUM(amount),0) AS total FROM payment_requests WHERE user_id=? AND kind='withdrawal' AND status IN ('pending','processing','paid') AND created_at>=? AND created_at<?").get(user,start,end)).total;
+            if (used + amount > paymentLimits.dailyWithdrawal) fail('Daily withdrawal limit is 50,000 ETB (Ethiopian time)', 409);
             (await this.cap(user));
             (await this.ensureAccounts(user));
             (await this.store.transfer(op, `${user}:cash_available`, `${user}:cash_reserved`, amount));
@@ -206,6 +215,7 @@ export class Payments {
                 details = { reference: ref || null, recipient, sender, amount: row.amount, receiptHash: row.receipt_hash || null, confirmation: 'Reviewer approved receipt of funds' };
             }
             else if (action === 'claim' && row.kind === 'withdrawal' && row.status === 'pending') {
+                await this.reservePayout(row);
                 status = 'processing';
             }
             else if (action === 'paid' && row.kind === 'withdrawal' && row.status === 'processing') {
@@ -214,9 +224,13 @@ export class Payments {
                 const ref = reference(data.verifiedReference);
                 if (data.bankConfirmed !== true || data.verifiedAmount !== row.amount || destination(row.method, data.verifiedRecipient) !== row.destination)
                     fail('Confirm the transfer succeeded with the exact destination and amount');
+                const allowance=await this.db.prepare("SELECT * FROM payout_allowances WHERE request_id=? AND status='reserved'").get(row.id);
+                if(!allowance)fail('Payout allowance must be reserved before sending money',409);
+                await this.checkPayoutCapacity(row);
                 (await this.reserveReference(row, 'outgoing', ref));
                 (await this.store.transfer(op, `${row.user_id}:cash_reserved`, `cash:clearing:${row.method}`, row.amount));
                 status = 'paid';
+                await this.db.prepare("UPDATE payout_allowances SET status='paid',day=? WHERE request_id=?").run(now(),row.id);
                 details = { reference: ref, amount: row.amount, recipient: row.destination };
             }
             else if (action === 'reject' && row.status === 'pending') {
@@ -230,6 +244,7 @@ export class Payments {
                     fail('Only the assigned reviewer can confirm that no funds were sent', 403);
                 details = { reason: text(data.reason, 'Failure reason', 300), fundsNotSent: true };
                 status = 'failed';
+                await this.db.prepare("UPDATE payout_allowances SET status='released' WHERE request_id=?").run(row.id);
                 (await this.store.transfer(op, `${row.user_id}:cash_reserved`, `${row.user_id}:cash_available`, row.amount));
             }
             else
@@ -238,6 +253,15 @@ export class Payments {
             (await this.audit(id, actor, action, details));
             return this.view((await this.row(id)));
         }));
+    }
+    async checkPayoutCapacity(row) {
+        const [start,end]=ethiopianDay();
+        const used=(await this.db.prepare("SELECT COALESCE(SUM(amount),0) AS total FROM payout_allowances WHERE user_id=? AND request_id<>? AND (status='reserved' OR (status='paid' AND day>=? AND day<?))").get(row.user_id,row.id,start,end)).total;
+        if(row.amount>paymentLimits.maxWithdrawal||used+row.amount>paymentLimits.dailyWithdrawal)fail('Payout-day limit reached. Do not send this transfer; wait until capacity is available.',409);
+    }
+    async reservePayout(row) {
+        await this.checkPayoutCapacity(row);
+        await this.db.prepare("INSERT INTO payout_allowances VALUES(?,?,?,?,'reserved')").run(row.id,row.user_id,row.amount,now());
     }
     async receiptFor(user, id) {
         const row = (await this.row(id));

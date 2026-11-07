@@ -47,7 +47,7 @@ test('screenshot-only proof stays pending, receipts are private and verified ref
     (await assert.rejects(async () => (await p.review('tg:1', b.id, approval(), 'duplicate-bank')), /already used/));
     assert.equal((await p.balance('tg:4')).available, 0);
     assert.equal((await p.row(b.id)).status, 'pending');
-    const bad = (await p.createDeposit('tg:2', { method: 'cbe', amount: 100 }, 'invalid-file'));
+    const bad = (await p.createDeposit('tg:2', { method: 'cbe', amount: 10000 }, 'invalid-file'));
     (await assert.rejects(async () => (await p.submitProof('tg:2', bad.id, { senderName: 'Alice', receipt: { type: 'image/svg+xml', base64: 'PHN2Zz4=' } }, 'invalid-proof')), /PNG or JPEG/));
     (await assert.rejects(async () => (await p.submitProof('tg:2', bad.id, { senderName: 'Alice' }, 'missing-proof')), /transaction ID or/));
 });

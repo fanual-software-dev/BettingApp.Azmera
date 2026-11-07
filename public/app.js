@@ -10,6 +10,7 @@ function showMessage(text, duration = 0) {
 let token = null;
 const broadcastUI = setupBroadcasts({ $, api, node });
 const dashboardUI = setupDashboard({ $, api, node, format: value => format(value) });
+const crashUI = setupCrash({ $, api, node, format: value => format(value), signedIn: () => Boolean(token), login: () => openAuth('login') });
 let userPhone = null;
 try { sessionStorage.removeItem('azmera-token'); } catch { /* Remove legacy tab-only credentials. */ }
 let authMode = 'login';
@@ -27,10 +28,11 @@ function amount(id) {
   if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Enter a valid positive amount.');
   return value;
 }
-async function api(route, data, key = crypto.randomUUID()) {
+async function api(route, data, key = crypto.randomUUID(), options = {}) {
   const response = await fetch(route, {
     method: data === undefined ? 'GET' : 'POST',
     credentials: 'same-origin',
+    signal: options.signal,
     headers: { ...(data === undefined ? {} : { 'Content-Type': 'application/json', 'Idempotency-Key': key }) },
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   });
@@ -40,7 +42,7 @@ async function api(route, data, key = crypto.randomUUID()) {
       clearSession();
       $('auth-description').textContent = 'Please close this Mini App and reopen it using Open Azmera in your bot to sign in again.';
     }
-    throw new Error(result.error || 'Request failed');
+    throw Object.assign(new Error(result.error || 'Request failed'),{status:response.status});
   }
   return result;
 }
@@ -152,11 +154,12 @@ $('confirm-share-phone').onclick = () => sharePhone($('confirm-share-phone'));
 $('login').onclick = () => action($('login'), () => login('/api/auth/local'));
 $('deposit').onclick = () => action($('deposit'), async () => { await api('/api/sandbox/deposits', { amount: amount('amount') }); await refresh(); showMessage('Test credits added. No real money was collected.', 2000); });
 $('withdraw').onclick = () => action($('withdraw'), async () => { await api('/api/sandbox/withdrawals', { amount: amount('amount') }); await refresh(); });
-$('bet').onclick = () => action($('bet'), async () => { await api('/api/sandbox/bets', { gameId: selectedGame, amount: amount('stake') }); await refresh(); });
+$('bet').onclick = () => action($('bet'), async () => { if(!token){openAuth('login');return;} await api('/api/sandbox/bets', { gameId: selectedGame, amount: amount('stake') }); await refresh(); });
 $('refresh').onclick = () => action($('refresh'), refresh);
 $('launch-provider').onclick = () => action($('launch-provider'), async () => {
   const game = selectedProviderGame;
   if (!game) return;
+  if(!token){openAuth('login');return;}
   const launched = await api('/api/games/launch', { gameId: game.id });
   if (!launched.launchUrl) throw new Error(`${game.name} is currently unavailable.`);
   $('game-title').textContent = `${game.name} · provider sandbox`;
@@ -188,13 +191,13 @@ async function boot() {
   if (config.botUrl) $('telegram-open').href = config.botUrl;
   for (const game of config.games) {
     const card = button('', async () => {
+      if(game.engine==='crash'){await crashUI.open(game.id);return;}
       if (game.status === 'coming-soon') {
         $('info-title').textContent = game.name;
         $('info-description').textContent = 'Coming soon. This game is in our catalog, but gameplay is not connected yet.';
         $('info-dialog').showModal();
         return;
       }
-      if (!token) { openAuth('login'); return; }
       $('account-dialog').showModal();
       $('simulator').hidden = true;
       $('provider-panel').hidden = !supplierGames.has(game.id);
@@ -204,7 +207,7 @@ async function boot() {
         $('provider-status').textContent = 'Checking availability…';
         $('launch-provider').textContent = `Open ${game.name}`;
         $('launch-provider').disabled = true;
-        const status = await api(`/api/integrations/${game.id}`);
+        const status = token ? await api(`/api/integrations/${game.id}`) : {launchReady:false};
         if (selectedProviderGame?.id !== game.id) return;
         $('provider-status').textContent = status.launchReady
           ? `${game.name} is available with test credits in the provider sandbox.`
@@ -213,7 +216,6 @@ async function boot() {
         $('provider-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      await api('/api/games/launch', { gameId: game.id });
       selectedGame = game.id; $('selected-game').textContent = `${game.name} · sandbox`;
       $('simulator').hidden = false; $('simulator').scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
@@ -221,7 +223,18 @@ async function boot() {
     card.dataset.category = game.category;
     card.dataset.name = normalizeSearch(game.name);
     const info = node('span', '', 'game-info');
-    info.append(node('strong', game.name), node('em', game.status === 'coming-soon' || supplierGames.has(game.id) ? 'COMING SOON' : 'WALLET DEMO'));
+    info.append(node('strong', game.name), node('em', game.engine==='crash' ? 'PLAY NOW' : game.status === 'coming-soon' || supplierGames.has(game.id) ? 'COMING SOON' : 'PREVIEW'));
+    const badges=node('span','','game-badges');
+    for(const key of config.gameBadges?.games?.[game.id]||[]){
+      const definition=config.gameBadges.definitions?.[key];if(!definition)continue;
+      const badge=node('span',definition.label,'game-badge');badge.title=definition.title||definition.label;badge.setAttribute('aria-label',badge.title);
+      if(/^#[0-9a-f]{6}$/i.test(definition.color||''))badge.style.color=definition.color;
+      if(/^#[0-9a-f]{6}$/i.test(definition.background||''))badge.style.backgroundColor=definition.background;
+      badges.append(badge);
+    }
+    card.dataset.gameId=game.id;
+    if(game.id==='azmera-flight')card.id='open-flight';
+    if(game.id==='azmera-jet')card.id='open-jet';
     const art = node('span', '', 'game-art');
     if (game.artwork) {
       const logo = document.createElement('img');
@@ -234,9 +247,10 @@ async function boot() {
       art.classList.add('placeholder-art');
       art.append(node('span', game.category === 'Slots' ? '\u2726' : '\u2197', 'art-emblem'), node('span', game.name, 'art-title'));
     }
-    card.append(art, info); $('games').append(card);
+    card.append(art, info, badges); $('games').append(card);
   }
   filterGames();
+  loadRecentWins();
   tg?.ready(); tg?.expand();
   $('auth-telegram').hidden = !showTelegramLink;
   $('telegram-open').onclick = event => { event.preventDefault(); openTelegram(); };
@@ -247,6 +261,8 @@ function clearSession() {
   token = null;
   broadcastUI.reset();
   dashboardUI.reset();
+  crashUI.reset();
+  $('feedback-dialog').close();$('feedback-form').reset();$('feedback-result').textContent='';
   userPhone = null;
   $('account-phone').textContent = '';
   $('phone-dialog').close();
@@ -327,6 +343,21 @@ function setSidebar(open) {
 }
 $('menu-toggle').onclick = () => setSidebar(!$('sidebar').classList.contains('open'));
 $('sidebar-backdrop').onclick = () => setSidebar(false);
+let feedbackKey=null, feedbackBusy=false;
+$('feedback-open').onclick=()=>{setSidebar(false);$('feedback-dialog').showModal();};
+$('feedback-form').oninput=()=>{if(!feedbackBusy)feedbackKey=null;};
+$('feedback-form').onsubmit=async event=>{
+  event.preventDefault();if(feedbackBusy)return;
+  if(!token){openAuth('login');return;}
+  feedbackBusy=true;$('feedback-submit').disabled=true;$('feedback-result').textContent='Sending…';
+  try{
+    feedbackKey ||= crypto.randomUUID();
+    const result=await api('/api/feedback',{subject:$('feedback-subject').value,email:$('feedback-email').value,message:$('feedback-message').value},feedbackKey);
+    if(result.status==='sent'){$('feedback-form').reset();feedbackKey=null;$('feedback-result').textContent='Thank you! Your feedback has been sent.';}
+    else $('feedback-result').textContent='Your submission is being processed. Please keep this reference: '+result.id;
+  }catch(error){$('feedback-result').textContent=error.message;if(error.status===503)feedbackKey=null;}
+  finally{feedbackBusy=false;$('feedback-submit').disabled=false;}
+};
 document.addEventListener('keydown', event => { if (event.key === 'Escape') setSidebar(false); });
 document.addEventListener('click', event => {
   if (!$('sidebar').contains(event.target) && !$('menu-toggle').contains(event.target)) setSidebar(false);
@@ -343,6 +374,23 @@ function filterGames() {
   $('clear-search').hidden = !$('game-search').value;
 }
 function normalizeSearch(value) { return value.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+let winsLoading=false;
+async function loadRecentWins(){
+  if(winsLoading||document.hidden)return;winsLoading=true;
+  try{
+    const {wins}=await api('/api/recent-wins');const list=$('recent-wins');list.replaceChildren();
+    for(const win of wins){
+      const game=config.games.find(g=>g.id===win.gameId);if(!game)continue;
+      const card=node('article','','big-win');const icon=document.createElement('img');icon.src=game.artwork;icon.alt='';
+      const info=node('div');info.append(node('strong',game.name),node('small','Player · Cash payout'));
+      const prize=node('div','','big-win-prize');prize.append(node('strong',`${format(win.payout)} ETB`),node('span',`${(win.multiplier/100).toFixed(2)}×`,resultColor(win.multiplier)));
+      card.append(icon,info,prize);list.append(card);
+    }
+    if(!list.children.length)list.append(node('p','No cash wins of 1,000 ETB or more in the last 24 hours.'));
+  }catch{if(!$('recent-wins').children.length)$('recent-wins').append(node('p','Recent wins are temporarily unavailable.'));}
+  finally{winsLoading=false;}
+}
+setInterval(()=>{if(config)loadRecentWins();},15000);
 $('clear-search').onclick = () => { $('game-search').value = ''; filterGames(); $('game-search').focus(); };
 $('game-search').oninput = filterGames;
 for (const el of document.querySelectorAll('[data-filter]')) el.onclick = () => {

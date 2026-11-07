@@ -38,9 +38,17 @@ export function readConfig(env = process.env) {
   const databasePoolSize = Number(env.DATABASE_POOL_SIZE || 5);
   if (!Number.isInteger(databasePoolSize) || databasePoolSize < 1 || databasePoolSize > 20) throw new Error('DATABASE_POOL_SIZE must be between 1 and 20');
   if (env.DATABASE_SSL && !['true', 'false'].includes(env.DATABASE_SSL)) throw new Error('DATABASE_SSL must be true or false');
+  const crashMode = env.CRASH_MODE || 'demo';
+  const smtpPort=Number(env.SMTP_PORT||587);
+  if(!Number.isInteger(smtpPort)||smtpPort<1||smtpPort>65535)throw new Error('Invalid SMTP_PORT');
+  if(env.SMTP_FROM && !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(env.SMTP_FROM))throw new Error('SMTP_FROM must be a single email address');
+  if (!['demo','cash'].includes(crashMode)) throw new Error('CRASH_MODE must be demo or cash');
+  if (crashMode === 'cash' && (databaseDriver !== 'postgres' || env.DATABASE_SSL === 'false' || localLogin || !manualPaymentsEnabled || !env.TELEGRAM_BOT_TOKEN || publicUrl.protocol !== 'https:'))
+    throw new Error('Cash games require PostgreSQL with TLS, HTTPS, Telegram login, and configured manual payments. Local login must be disabled.');
   return {
+    smtp: {host:env.SMTP_HOST||'',port:smtpPort,user:env.SMTP_USER||'',pass:env.SMTP_PASS||'',from:env.SMTP_FROM||''},
     databaseDriver, databaseUrl, databaseSsl: env.DATABASE_SSL !== 'false', databaseCa: env.DATABASE_CA_CERT || '', databasePoolSize,
-    mode, host, port, localLogin, publicUrl: publicUrl.origin,
+    mode, crashMode, host, port, localLogin, publicUrl: publicUrl.origin,
     databasePath: path.resolve(env.DATABASE_PATH || './data/azmera.sqlite'),
     payments: { enabled: manualPaymentsEnabled, admins: paymentAdmins.map(id => `tg:${id}`), methods: paymentMethods },
     botToken: env.TELEGRAM_BOT_TOKEN || '', webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',

@@ -1,0 +1,10 @@
+{
+  "definitions": {
+    "new": { "label": "NEW", "title": "New game", "color": "#321600", "background": "#ff9a32" },
+    "hot": { "label": "🔥", "title": "Hot game", "color": "#ffffff", "background": "#45251d" }
+  },
+  "games": {
+    "azmera-flight": ["new", "hot"],
+    "azmera-jet": ["new", "hot"]
+  }
+}

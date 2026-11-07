@@ -1,4 +1,6 @@
 export const games = Object.freeze([
+  { id: 'azmera-flight', name: 'Azmera Flight', provider: 'Azmera', category: 'Crash', artwork: '/assets/games/azmera-flight.svg', status: 'original', engine: 'crash', liveAvailable: false },
+  { id: 'azmera-jet', name: 'Azmera Jet', provider: 'Azmera', category: 'Crash', artwork: '/assets/games/azmera-jet.svg', status: 'original', engine: 'crash', liveAvailable: false },
   {
     "id": "aviator",
     "name": "Aviator",
@@ -280,5 +282,5 @@ export function getGame(id) {
 }
 
 export function providerStatus() {
-  return games.map(({ id, provider }) => ({ game: id, provider, implemented: false, reason: 'Supplier contract, credentials and adapter required' }));
+  return games.map(({ id, provider, engine }) => ({ game: id, provider, implemented: engine === 'crash', reason: engine === 'crash' ? 'Original Azmera game; availability follows crash mode and bankroll controls' : 'Supplier contract, credentials and adapter required' }));
 }

@@ -46,7 +46,7 @@ test('manual payment snapshots, receipts, cash reservations and idempotency surv
         assert.equal((await payments.row(deposit.id)).receiver_account, '1000000000001');
         assert.equal((await payments.list('tg:2'))[0].hasReceipt, true);
         assert.equal((await payments.receiptFor('tg:1', deposit.id)).bytes.length, Buffer.from(receipt.base64, 'base64').length);
-        const next = (await payments.createDeposit('tg:2', { method: 'cbe', amount: 2000 }, 'new-daily-deposit'));
+        const next = (await payments.createDeposit('tg:2', { method: 'cbe', amount: 10000 }, 'new-daily-deposit'));
         assert.equal(next.receiver_account, '1000000000002');
         const decision = { action: 'approve', verifiedReference: 'DURABLE123', verifiedAmount: 10000, verifiedRecipient: '1000000000001', verifiedSender: 'Customer', bankConfirmed: true };
         (await payments.review('tg:1', deposit.id, decision, 'durable-approval'));
