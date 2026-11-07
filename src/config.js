@@ -43,8 +43,16 @@ export function readConfig(env = process.env) {
   if(!Number.isInteger(smtpPort)||smtpPort<1||smtpPort>65535)throw new Error('Invalid SMTP_PORT');
   if(env.SMTP_FROM && !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(env.SMTP_FROM))throw new Error('SMTP_FROM must be a single email address');
   if (!['demo','cash'].includes(crashMode)) throw new Error('CRASH_MODE must be demo or cash');
-  if (crashMode === 'cash' && (databaseDriver !== 'postgres' || env.DATABASE_SSL === 'false' || localLogin || !manualPaymentsEnabled || !env.TELEGRAM_BOT_TOKEN || publicUrl.protocol !== 'https:'))
-    throw new Error('Cash games require PostgreSQL with TLS, HTTPS, Telegram login, and configured manual payments. Local login must be disabled.');
+  if (crashMode === 'cash') {
+    const missing=[];
+    if(databaseDriver!=='postgres')missing.push('DATABASE_DRIVER=postgres with DATABASE_URL configured');
+    if(env.DATABASE_SSL==='false')missing.push('DATABASE_SSL=true');
+    if(localLogin)missing.push('ALLOW_LOCAL_LOGIN=false');
+    if(!manualPaymentsEnabled)missing.push('MANUAL_PAYMENTS_ENABLED=true');
+    if(!env.TELEGRAM_BOT_TOKEN?.trim())missing.push('TELEGRAM_BOT_TOKEN must be configured');
+    if(publicUrl.protocol!=='https:')missing.push('PUBLIC_APP_URL must use https://');
+    if(missing.length)throw new Error(`Cash games require these configuration fixes: ${missing.join('; ')}. Secret values are omitted.`);
+  }
   return {
     smtp: {host:env.SMTP_HOST||'',port:smtpPort,user:env.SMTP_USER||'',pass:env.SMTP_PASS||'',from:env.SMTP_FROM||''},
     databaseDriver, databaseUrl, databaseSsl: env.DATABASE_SSL !== 'false', databaseCa: env.DATABASE_CA_CERT || '', databasePoolSize,

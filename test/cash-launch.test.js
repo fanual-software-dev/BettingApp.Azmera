@@ -22,6 +22,7 @@ async function fixture(t, capital=20000000) {
 }
 test('cash startup rejects insecure or incomplete deployment configuration',()=>{
  assert.throws(()=>readConfig({CRASH_MODE:'cash'}),/Cash games require/);
+ assert.throws(()=>readConfig({CRASH_MODE:'cash',DATABASE_URL:'postgresql://user:secret@example.com/postgres',DATABASE_SSL:'false',TELEGRAM_BOT_TOKEN:'private-token',PUBLIC_APP_URL:'https://example.com'}),error=>error.message.includes('DATABASE_SSL=true')&&error.message.includes('MANUAL_PAYMENTS_ENABLED=true')&&!error.message.includes('secret@example')&&!error.message.includes('private-token'));
  assert.throws(()=>readConfig({CRASH_MODE:'wrong'}),/CRASH_MODE/);
  const c=readConfig({...{DATABASE_URL:'postgresql://user:password@example.com/postgres',PUBLIC_APP_URL:'https://example.com',TELEGRAM_BOT_TOKEN:'fixture',CRASH_MODE:'cash',MANUAL_PAYMENTS_ENABLED:'true',PAYMENT_ADMIN_TELEGRAM_IDS:'1',CBE_ACCOUNT_NUMBER:'1000000000001',CBE_ACCOUNT_HOLDER:'Owner'}});
  assert.equal(c.crashMode,'cash');
